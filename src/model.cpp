@@ -238,6 +238,8 @@ void GradientBoosting::test() { return; }
  */
 void GradientBoosting::train() { return; }
 
+void GradientBoosting::unlearn(std::vector<int>& unidxs) { return; }
+
 /**
  * Method to get the argmax of a vector.
  * @param[in] vec: the vector
@@ -821,6 +823,8 @@ void Regression::train() {
   if (config->save_importance) getTopFeatures();
 }
 
+void Regression::unlearn(std::vector<int>& unidxs) { return; }
+
 /**
  * Helper method to compute hessian and residual simultaneously.
  * @param k : the current class
@@ -1120,6 +1124,8 @@ void BinaryMart::train() {
 }
 
 
+void BinaryMart::unlearn(std::vector<int>& unidxs) { return; }
+
 // =============================================================================
 //
 // Mart
@@ -1230,6 +1236,61 @@ void Mart::train() {
       tree->updateFeatureImportance(m);
       updateF(k, tree);
       additive_trees[m][k] = std::unique_ptr<Tree>(tree);
+    }
+    if (data->data_header.n_classes == 2) {
+#pragma omp parallel for
+      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
+    }
+
+    double loss = getLoss();
+    if ((m + 1) % config->model_eval_every == 0){
+      print_train_message(m + 1,loss,t1.get_time_restart());
+    }
+    if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+    if(loss < config->stop_tolerance){
+      config->model_n_iterations = m + 1;
+      break;
+    }
+  }
+  printf("Training has taken %.5f seconds\n", t2.get_time());
+
+  if (config->save_model) saveModel(config->model_n_iterations);
+
+  if (config->save_importance) getTopFeatures();
+
+}
+
+void Mart::unlearn(std::vector<int>& unidxs) {
+  // set up buffers for OpenMP
+  std::vector<std::vector<std::vector<unsigned int>>> buffer =
+      GradientBoosting::initBuffer();
+
+  // build one tree if it is binary prediction
+  int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+
+  Utils::Timer t1, t2, t3;
+  t1.restart();
+  t2.restart();
+  t3.restart();
+
+  for (int m = start_epoch; m < config->model_n_iterations; m++) {
+    if (config->model_data_sample_rate < 1)
+      ids = sample(data->n_data, config->model_data_sample_rate);
+    if (config->model_feature_sample_rate < 1)
+      fids =
+          sample(data->data_header.n_feats, config->model_feature_sample_rate);
+
+    computeHessianResidual();
+
+    for (int k = 0; k < K; ++k) {
+
+      zeroBins();
+      Tree *tree = additive_trees[m][k].get();
+      tree->init(&hist, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      tree->unlearnTree(&ids, &fids, unidxs);
+      tree->updateFeatureImportance(m);
+      updateF(k, tree);
     }
     if (data->data_header.n_classes == 2) {
 #pragma omp parallel for
@@ -1543,6 +1604,8 @@ void ABCMart::train() {
   if (config->save_model) saveModel(config->model_n_iterations);
   if (config->save_importance) getTopFeatures();
 }
+
+void ABCMart::unlearn(std::vector<int>& unidxs) { return; }
 
 /**
  * Method to implement testing process for ABCMART algorithm as described by
@@ -2053,6 +2116,8 @@ void LambdaMart::computeHessianResidual() {
   }
 }
 
+void LambdaMart::unlearn(std::vector<int>& unidxs) { return; }
+
 
 std::pair<double,double> GradientBoosting::getNDCG(){
   if(data->rank_groups.size() == 0 || data->rank_groups[data->rank_groups.size() - 1].second != data->n_data){
@@ -2115,6 +2180,8 @@ void GBRank::train(){
   if (config->save_model) saveModel(config->model_n_iterations);
   if (config->save_importance) getTopFeatures();
 }
+
+void GBRank::unlearn(std::vector<int>& unidxs) { return; }
 
 void GBRank::computeHessianResidual() {
   std::vector<double> gb_label(data->n_data,0.0);

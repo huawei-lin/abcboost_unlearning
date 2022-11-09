@@ -35,9 +35,16 @@ struct HistBin{
 class Tree {
  public:
   struct SplitInfo {
-    uint split_fi = 0;
-    double gain = -1;
-    int split_v = -1;
+    uint split_fi;
+    double gain;
+    int split_v;
+
+    SplitInfo(){
+      split_fi = 0;
+      gain = -1;
+      split_v = -1;
+    }
+    SplitInfo(uint fi, double g, int v) : split_fi(fi),gain(g),split_v(v){}
   };
 
   class TreeNode {
@@ -49,6 +56,7 @@ class Tree {
     uint split_fi;
     double gain, predict_v;
     int split_v;
+    std::vector<SplitInfo> gains;
 
     TreeNode();
 
@@ -86,8 +94,12 @@ class Tree {
   ~Tree();
 
   virtual void binSort(int x, int sib);
+  virtual void unlearnBinSort(int x, int sib, \
+      std::unordered_map<int, bool>& unids_mp);
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
+  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+                   std::vector<int>& unids);
 
   void updateFeatureImportance(int iter);
 

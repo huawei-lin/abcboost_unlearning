@@ -143,7 +143,7 @@ void Data::loadData(bool from_scratch) {
     load();
     printf("-- finish loading adaptive quantization in %.4f seconds.\n",
            timer.get_time_restart());
-  } else if (config->model_mode == "train") {
+  } else if (config->model_mode == "train" || config->model_mode == "unlearn") {
     adaptiveQuantization();  // discretize the features using adaptive bin sizes
     printf("-- finish creating adaptive quantization in %.4f seconds.\n",
            timer.get_time_restart());
@@ -429,7 +429,7 @@ bool Data::doesFileExist(std::string path) {
  */
 void Data::featureCleanUp() {
   valid_fi.clear();
-	if(config->model_mode == "train"){
+	if(config->model_mode == "train" || config->model_mode == "unlearn"){
 		for (unsigned int j = 0; j < Xi.size(); ++j) {
 	//    if (!Xv_raw[j].empty()) valid_fi.push_back(j);
 			if (Xv_raw[j].size() >= 2 * config->tree_min_node_size) valid_fi.push_back(j);
@@ -450,7 +450,7 @@ void Data::load() {
 
   size_t ret = 0;
 	if (config->no_map == true){
-		if(config->model_mode == "train"){
+		if(config->model_mode == "train" || config->model_mode == "unlearn"){
 			data_header.n_bins_per_f.resize(data_header.n_feats,0);
 			data_header.unobserved_fv.resize(data_header.n_feats);
 			for(int j = 0;j < data_header.n_feats;++j)

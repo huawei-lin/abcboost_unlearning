@@ -258,6 +258,91 @@ void Tree::binSort(int x, int sib) {
   }
 }
 
+void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_mp) {
+  const auto* H = hessian;
+  const auto* R = residual;
+  uint start = nodes[x].start;
+  uint end = nodes[x].end;
+  uint fsz = fids->size();
+
+  if(!(start == 0 && end == data->n_data)){
+    alignHessianResidual(start,end);
+  }
+
+  setInLeaf<true>(start,end);
+
+  CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(guided),
+      config->use_omp == 1,
+    for (int j = 0; j < fsz; ++j) {
+      int fid = (data->valid_fi)[(*fids)[j]];
+      auto &b_csw = (*hist)[x][fid];
+      if (data->auxDataWidth[fid] == 0){
+        std::vector<data_quantized_t> &fv = (data->Xv)[fid];
+        if (data->dense_f[fid]) {
+          for (uint i = start; i < end ;++i){
+            if (unids_mp[ids[i]] == false) continue;
+            auto bin_id = fv[ids[i]];
+            b_csw[bin_id].count -= 1;
+            b_csw[bin_id].sum -= R_tmp[i];
+            b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+          }
+        } else {
+          std::vector<uint> &fi = (data->Xi)[fid];
+          ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+
+          for (int i = 0;i < fi.size();++i){
+            if (unids_mp[fi[i]] == false) continue;
+            if (in_leaf[fi[i]] == true){
+              auto bin_id = fv[i];
+              auto id = fi[i];
+              b_csw[bin_id].count -= 1;
+              b_csw[bin_id].sum -= R[id];
+              b_csw[bin_id].weight -= is_weighted ? H[id] : 1;
+
+              b_csw[j_unobserved].sum += R[id];
+              b_csw[j_unobserved].count += 1;
+              b_csw[j_unobserved].weight += is_weighted ? H[id] : 1;
+            }
+          }
+        }
+      } else {
+        std::vector<uint8_t> &fv = (data->auxData)[fid];
+        if (data->dense_f[fid]) {
+          for(uint i = start;i < end;++i){
+            if (unids_mp[ids[i]] == false) continue;
+            auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
+            b_csw[bin_id].count -= 1;
+            b_csw[bin_id].sum -= R_tmp[i];
+            b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+          }
+        } else {
+          std::vector<uint> &fi = (data->Xi)[fid];
+          ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+
+          for(int i = 0;i < fi.size();++i){
+            if (unids_mp[fi[i]] == false) continue;
+            if(in_leaf[fi[i]] == true){
+              auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
+              auto id = fi[i];
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R[id];
+              b_csw[bin_id].weight += is_weighted ? H[id] : 1;
+
+              b_csw[j_unobserved].sum -= R[id];
+              b_csw[j_unobserved].count -= 1;
+              b_csw[j_unobserved].weight -= is_weighted ? H[id] : 1;
+            }
+          }
+        }
+      }
+    }
+  )
+
+  setInLeaf<false>(start,end);
+
+}
+
 /**
  * Fit a decision tree to pseudo residuals which partitions the input space
  * into J disjoint regions and predicts a constant value for each region.
@@ -331,6 +416,25 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
   regress();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
+}
+
+void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
+                       std::vector<int>& unids) {
+  this->ids = (*(std::vector<uint> *)ids);
+  this->fids = fids;
+  in_leaf.resize(data->Y.size());
+
+  dense_fids.reserve(fids->size());
+  sparse_fids.reserve(fids->size());
+  for(int j = 0;j < fids->size();++j){
+    int fid = (data->valid_fi)[(*fids)[j]];
+    if(data->dense_f[fid])
+      dense_fids.push_back(fid);
+    else
+      sparse_fids.push_back(fid);
+  }
+
+  return;
 }
 
 void Tree::updateFeatureImportance(int iter) {
@@ -482,6 +586,8 @@ void Tree::populateTree(FILE *fileptr) {
     ret += fread(&node.parent, sizeof(node.parent), 1, fileptr);
     ret += fread(&node.left, sizeof(node.left), 1, fileptr);
     ret += fread(&node.right, sizeof(node.right), 1, fileptr);
+    ret += fread(&node.start, sizeof(node.start), 1, fileptr);
+    ret += fread(&node.end, sizeof(node.end), 1, fileptr);
     ret += fread(&node.split_fi, sizeof(node.split_fi), 1, fileptr);
     ret += fread(&node.split_v, sizeof(node.split_v), 1, fileptr);
     ret += fread(&node.predict_v, sizeof(node.predict_v), 1, fileptr);
@@ -612,6 +718,8 @@ void Tree::saveTree(FILE *fp) {
     fwrite(&node.parent, sizeof(node.parent), 1, fp);
     fwrite(&node.left, sizeof(node.left), 1, fp);
     fwrite(&node.right, sizeof(node.right), 1, fp);
+    fwrite(&node.start, sizeof(node.start), 1, fp);
+    fwrite(&node.end, sizeof(node.end), 1, fp);
     fwrite(&node.split_fi, sizeof(node.split_fi), 1, fp);
     fwrite(&node.split_v, sizeof(node.split_v), 1, fp);
     fwrite(&node.predict_v, sizeof(node.predict_v), 1, fp);
@@ -740,23 +848,27 @@ void Tree::trySplit(int x, int sib) {
   SplitInfo best_info;
 
   best_info.gain = -1;
-  std::vector<std::pair<double,int>> gains(fids->size());
+  nodes[x].gains.reserve(fids->size());
   
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(guided),
     config->use_omp == true,
     for (int j = 0; j < fids->size(); ++j) {
         int fid = (data->valid_fi)[(*fids)[j]];
-        gains[j] = featureGain(x, fid);
+        std::pair<double, int> gain_pair = featureGain(x, fid);
+        if (gain_pair.second != -1) {
+          nodes[x].gains.push_back(SplitInfo(fid, gain_pair.first, gain_pair.second));
+        }
     }
   )
-  for(int j = 0;j < gains.size();++j){
-    const auto& info = gains[j];
-    int fid = (data->valid_fi)[(*fids)[j]];
-    if (info.first > best_info.gain) {
-      best_info.gain = info.first;
+  for(int j = 0;j < nodes[x].gains.size();++j){
+    const auto& info = nodes[x].gains[j];
+    int fid = info.split_fi, split_v = info.split_v;
+    double gain = info.gain;
+    if (gain > best_info.gain) {
+      best_info.gain = gain;
       best_info.split_fi = fid;
-      best_info.split_v = info.second;
+      best_info.split_v = split_v;
     }
   }
 
