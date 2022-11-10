@@ -66,6 +66,7 @@ class Tree {
   // bin_counts stores the summed weights within a bin
   // bin_sums stores the summed residuals within a bin
   std::vector<std::vector<std::vector<HistBin>>> *hist;
+  std::vector<std::vector<std::vector<HistBin>>> hist_record;
   std::vector<std::vector<uint>> *l_buffer, *r_buffer;
   std::vector<double> *feature_importance;
   double *hessian, *residual;

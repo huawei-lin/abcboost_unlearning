@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
   // config->model_use_logit =
   //     (config->model_name.find("logit") != std::string::npos);
 
-  if (config->model_name == "mart" || config->model_name == "robustlogit") {
+  if (config->model_name == "mart" /*|| config->model_name == "robustlogit"*/) {
     /*
     if(data->data_header.n_classes == 2){
       model = std::unique_ptr<ABCBoost::GradientBoosting>(
@@ -100,18 +100,13 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Unsupported model name %s\n", config->model_name.c_str());
     exit(1);
   }
-  printf("test 1\n");
 
   model->init();
-  printf("test 2\n");
   model->loadModel();
-  printf("test 3\n");
   model->setupExperiment();
-  printf("test 4\n");
 
   std::vector<int> unidxs;
   unidxs.push_back(1);unidxs.push_back(2);unidxs.push_back(3);unidxs.push_back(4);
-  printf("test 5\n");
   model->unlearn(unidxs);
   return 0;
 }

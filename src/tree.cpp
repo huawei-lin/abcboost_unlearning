@@ -413,6 +413,7 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
       }
     }
   }
+  hist_record = *hist;
   regress();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
@@ -555,6 +556,9 @@ void Tree::init(
                 double* H_tmp,
                 double* R_tmp) {
   this->hist = hist;
+  if (hist == nullptr && config->model_mode == "unlearn") {
+    this->hist = &hist_record;
+  }
   this->l_buffer = l_buffer;
   this->r_buffer = r_buffer;
   this->feature_importance = feature_importance;
@@ -592,6 +596,17 @@ void Tree::populateTree(FILE *fileptr) {
     ret += fread(&node.split_v, sizeof(node.split_v), 1, fileptr);
     ret += fread(&node.predict_v, sizeof(node.predict_v), 1, fileptr);
 
+    int gains_num = 0;
+    ret += fread(&gains_num, sizeof(gains_num), 1, fileptr);
+    node.gains.resize(gains_num);
+    for (int i = 0; i < gains_num; i++) {
+      SplitInfo info = SplitInfo();
+      ret += fread(&info.split_fi, sizeof(info.split_fi), 1, fileptr);
+      ret += fread(&info.gain, sizeof(info.gain), 1, fileptr);
+      ret += fread(&info.split_v, sizeof(info.split_v), 1, fileptr);
+      node.gains[i] = info;
+    }
+
     // check whether a leaf
     if (node.idx < 0) {
       node.is_leaf = false;
@@ -603,6 +618,26 @@ void Tree::populateTree(FILE *fileptr) {
     }
 
     nodes[n] = node;
+  }
+
+  int hist_size_1, hist_size_2, hist_size_3;
+  ret += fread(&hist_size_1, sizeof(hist_size_1), 1, fileptr);
+  hist_record.resize(hist_size_1);
+  for (int i = 0; i < hist_size_1; i++) {
+    ret += fread(&hist_size_2, sizeof(hist_size_2), 1, fileptr);
+    hist_record[i].resize(hist_size_2);
+    for (int j = 0; j < hist_size_2; j++) {
+      ret += fread(&hist_size_3, sizeof(hist_size_3), 1, fileptr);
+      hist_record[i][j].resize(hist_size_3);
+      for (int k = 0; k < hist_size_3; k++) {
+        ret += fread(&hist_record[i][j][k].count, \
+               sizeof(hist_record[i][j][k].count), 1, fileptr);
+        ret += fread(&hist_record[i][j][k].sum, \
+               sizeof(hist_record[i][j][k].sum), 1, fileptr);
+        ret += fread(&hist_record[i][j][k].weight, \
+               sizeof(hist_record[i][j][k].weight), 1, fileptr);
+      }
+    }
   }
 }
 
@@ -723,6 +758,33 @@ void Tree::saveTree(FILE *fp) {
     fwrite(&node.split_fi, sizeof(node.split_fi), 1, fp);
     fwrite(&node.split_v, sizeof(node.split_v), 1, fp);
     fwrite(&node.predict_v, sizeof(node.predict_v), 1, fp);
+
+    int gains_num = node.gains.size();
+    fwrite(&gains_num, sizeof(gains_num), 1, fp);
+    for (int i = 0; i < gains_num; i++) {
+      fwrite(&node.gains[i].split_fi, sizeof(node.gains[i].split_fi), 1, fp);
+      fwrite(&node.gains[i].gain, sizeof(node.gains[i].gain), 1, fp);
+      fwrite(&node.gains[i].split_v, sizeof(node.gains[i].split_v), 1, fp);
+    }
+  }
+
+  int hist_size_1 = hist_record.size();
+  fwrite(&hist_size_1, sizeof(hist_size_1), 1, fp);
+  for (int i = 0; i < hist_size_1; i++) {
+    int hist_size_2 = hist_record[i].size();
+    fwrite(&hist_size_2, sizeof(hist_size_2), 1, fp);
+    for (int j = 0; j < hist_size_2; j++) {
+      int hist_size_3 = hist_record[i][j].size();
+      fwrite(&hist_size_3, sizeof(hist_size_3), 1, fp);
+      for (int k = 0; k < hist_size_3; k++) {
+        fwrite(&hist_record[i][j][k].count, \
+               sizeof(hist_record[i][j][k].count), 1, fp);
+        fwrite(&hist_record[i][j][k].sum, \
+               sizeof(hist_record[i][j][k].sum), 1, fp);
+        fwrite(&hist_record[i][j][k].weight, \
+               sizeof(hist_record[i][j][k].weight), 1, fp);
+      }
+    }
   }
 }
 

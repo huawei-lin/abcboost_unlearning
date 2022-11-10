@@ -1284,9 +1284,8 @@ void Mart::unlearn(std::vector<int>& unidxs) {
 
     for (int k = 0; k < K; ++k) {
 
-      zeroBins();
       Tree *tree = additive_trees[m][k].get();
-      tree->init(&hist, &buffer[0], &buffer[1], &feature_importance,
+      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                  &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       tree->unlearnTree(&ids, &fids, unidxs);
       tree->updateFeatureImportance(m);
