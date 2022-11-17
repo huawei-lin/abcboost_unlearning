@@ -584,7 +584,7 @@ void GradientBoosting::updateF(int k, Tree *tree) {
 #pragma omp parallel for
     for (int i = start; i < end; ++i) f[ids[i]] += update;
   }
-  tree->freeMemory();
+  // tree->freeMemory();
 }
 
 void ABCMart::updateNormF(int k, Tree *tree) {
@@ -1221,7 +1221,8 @@ void Mart::train() {
       ids = sample(data->n_data, config->model_data_sample_rate);
     if (config->model_feature_sample_rate < 1)
       fids =
-          sample(data->data_header.n_feats, config->model_feature_sample_rate);
+          // sample(data->data_header.n_feats, config->model_feature_sample_rate);
+          sample((data->valid_fi).size(), config->model_feature_sample_rate);
     
     computeHessianResidual();
 
@@ -1278,7 +1279,8 @@ void Mart::unlearn(std::vector<int>& unidxs) {
       ids = sample(data->n_data, config->model_data_sample_rate);
     if (config->model_feature_sample_rate < 1)
       fids =
-          sample(data->data_header.n_feats, config->model_feature_sample_rate);
+          // sample(data->data_header.n_feats, config->model_feature_sample_rate);
+          sample((data->valid_fi).size(), config->model_feature_sample_rate);
 
     computeHessianResidual();
 
@@ -1308,7 +1310,7 @@ void Mart::unlearn(std::vector<int>& unidxs) {
   }
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
-  if (config->save_model) saveModel(config->model_n_iterations);
+  // if (config->save_model) saveModel(config->model_n_iterations);
 
   if (config->save_importance) getTopFeatures();
 

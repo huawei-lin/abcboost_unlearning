@@ -50,6 +50,7 @@ class Tree {
   class TreeNode {
    public:
     bool is_leaf;
+    bool allow_build_subtree;
     short idx, left, right, parent;
     int start, end;
     // below are prediction related
@@ -73,6 +74,7 @@ class Tree {
 
   // ids stores the instance indices for each node
   std::vector<uint> ids;
+  std::unordered_map<int, bool> ids_blocklist;
   uint* ids_tmp;
   double* H_tmp;
   double* R_tmp;
@@ -105,6 +107,7 @@ class Tree {
   void updateFeatureImportance(int iter);
 
   std::pair<double, double> featureGain(int x, uint fid) const;
+  double featureGain(int x, uint fid, int split_v) const;
 
   void freeMemory();
 
@@ -137,7 +140,7 @@ class Tree {
   void trySplit(int x, int sib);
 
   inline void alignHessianResidual(const uint start, const uint end);
-  inline void initUnobserved(const uint start,const uint end,double& r_unobserved, double& h_unobserved);
+  inline void initUnobserved(const uint start,const uint end,int& c_unobserved, double& r_unobserved, double& h_unobserved);
 
   template<bool val>
   inline void setInLeaf(uint start,uint end){
@@ -149,6 +152,7 @@ class Tree {
         omp parallel for schedule(static, 4096),
         config->use_omp == true && (end - start > 4096),
         for (int i = start; i < end; ++i) {
+          if (ids_blocklist[ids[i]] == true) continue;
           in_leaf[ids[i]] = val;
         }
       )

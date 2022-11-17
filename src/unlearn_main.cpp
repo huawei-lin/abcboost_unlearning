@@ -106,7 +106,10 @@ int main(int argc, char* argv[]) {
   model->setupExperiment();
 
   std::vector<int> unidxs;
-  unidxs.push_back(1);unidxs.push_back(2);unidxs.push_back(3);unidxs.push_back(4);
+  int remove_num = 100;
+  for (int i = 1; i <= remove_num; i++) {
+    unidxs.push_back(i);
+  }
   model->unlearn(unidxs);
   return 0;
 }
