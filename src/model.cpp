@@ -238,7 +238,10 @@ void GradientBoosting::test() { return; }
  */
 void GradientBoosting::train() { return; }
 
-void GradientBoosting::unlearn(std::vector<int>& unidxs) { return; }
+/**
+ * Unlearn method.
+ */
+void GradientBoosting::unlearn(std::vector<uint>& unidxs) { return; }
 
 /**
  * Method to get the argmax of a vector.
@@ -823,8 +826,6 @@ void Regression::train() {
   if (config->save_importance) getTopFeatures();
 }
 
-void Regression::unlearn(std::vector<int>& unidxs) { return; }
-
 /**
  * Helper method to compute hessian and residual simultaneously.
  * @param k : the current class
@@ -1124,8 +1125,6 @@ void BinaryMart::train() {
 }
 
 
-void BinaryMart::unlearn(std::vector<int>& unidxs) { return; }
-
 // =============================================================================
 //
 // Mart
@@ -1261,7 +1260,7 @@ void Mart::train() {
 
 }
 
-void Mart::unlearn(std::vector<int>& unidxs) {
+void Mart::unlearn(std::vector<uint>& unids) {
   // set up buffers for OpenMP
   std::vector<std::vector<std::vector<unsigned int>>> buffer =
       GradientBoosting::initBuffer();
@@ -1289,7 +1288,7 @@ void Mart::unlearn(std::vector<int>& unidxs) {
       Tree *tree = additive_trees[m][k].get();
       tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                  &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
-      tree->unlearnTree(&ids, &fids, unidxs);
+      tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
       updateF(k, tree);
     }
@@ -1605,8 +1604,6 @@ void ABCMart::train() {
   if (config->save_model) saveModel(config->model_n_iterations);
   if (config->save_importance) getTopFeatures();
 }
-
-void ABCMart::unlearn(std::vector<int>& unidxs) { return; }
 
 /**
  * Method to implement testing process for ABCMART algorithm as described by
@@ -2117,9 +2114,6 @@ void LambdaMart::computeHessianResidual() {
   }
 }
 
-void LambdaMart::unlearn(std::vector<int>& unidxs) { return; }
-
-
 std::pair<double,double> GradientBoosting::getNDCG(){
   if(data->rank_groups.size() == 0 || data->rank_groups[data->rank_groups.size() - 1].second != data->n_data){
     fprintf(stderr,"[Error] query file does not match data!\n");
@@ -2181,8 +2175,6 @@ void GBRank::train(){
   if (config->save_model) saveModel(config->model_n_iterations);
   if (config->save_importance) getTopFeatures();
 }
-
-void GBRank::unlearn(std::vector<int>& unidxs) { return; }
 
 void GBRank::computeHessianResidual() {
   std::vector<double> gb_label(data->n_data,0.0);

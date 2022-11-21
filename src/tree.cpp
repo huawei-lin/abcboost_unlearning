@@ -90,12 +90,26 @@ inline void Tree::alignHessianResidual(const uint start,const uint end){
     config->use_omp == 1 && end - start > 1024,
     for(uint i = start;i < end;++i){
       auto id = ids[i];
-      if (ids_blocklist[id] == true) continue;
       H_tmp[i] = H[id];
       R_tmp[i] = R[id];
     }
   )
 }
+
+inline void Tree::alignHessianResidual(const uint start,const uint end, std::vector<uint>& ids){
+  const auto* H = hessian;
+  const auto* R = residual;
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(static),
+    config->use_omp == 1 && end - start > 1024,
+    for(uint i = start;i < end;++i){
+      auto id = ids[i];
+      H_tmp[i] = H[id];
+      R_tmp[i] = R[id];
+    }
+  )
+}
+
 
 inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserved, double& r_unobserved, double& h_unobserved){
   const auto* H = hessian;
@@ -119,6 +133,26 @@ inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserv
   c_unobserved = c;
 }
 
+inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserved, double& r_unobserved, double& h_unobserved, std::vector<uint>& ids){
+  const auto* H = hessian;
+  const auto* R = residual;
+  double r = r_unobserved;
+  double h = h_unobserved;
+  int c = c_unobserved;
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(static) reduction(+: r, h),
+    config->use_omp == true && (end - start > 1024),
+    for (int i = start; i < end; ++i) {
+      auto id = ids[i];
+      r += R[id];
+      h += H[id];
+      c++;
+    }
+  )
+  r_unobserved = r;
+  h_unobserved = h;
+  c_unobserved = c;
+}
 
 /**
  * Calculate bin_counts and bin_sums for all features at a node.
@@ -227,6 +261,7 @@ void Tree::binSort(int x, int sib) {
             if(in_leaf[fi[i]] == true){
               auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
               auto id = fi[i];
+              if (ids_blocklist[id] == true) continue;
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R[id];
               b_csw[bin_id].weight += is_weighted ? H[id] : 1;
@@ -268,23 +303,21 @@ void Tree::binSort(int x, int sib) {
   }
 }
 
-void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_mp) {
+void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids) {
   const auto* H = hessian;
   const auto* R = residual;
-  uint start = nodes[x].start;
-  uint end = nodes[x].end;
   uint fsz = fids->size();
 
-  if(!(start == 0 && end == data->n_data)){
-    alignHessianResidual(start,end);
+  if(!(start == 0 && end == unids.size())){
+    alignHessianResidual(start,end, unids);
   }
 
-  setInLeaf<true>(start,end);
+  setInLeaf<true>(start,end, unids);
 
   double r_unobserved = 0.0;
   double h_unobserved = 0.0;
   int c_unobserved = 0;
-  initUnobserved(start, end, c_unobserved, r_unobserved, h_unobserved);
+  initUnobserved(start, end, c_unobserved, r_unobserved, h_unobserved, unids);
 
   CONDITION_OMP_PARALLEL_FOR(
       omp parallel for schedule(guided),
@@ -296,7 +329,6 @@ void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_m
         std::vector<data_quantized_t> &fv = (data->Xv)[fid];
         if (data->dense_f[fid]) {
           for(uint i = start;i < end;++i){
-            if (unids_mp[ids[i]] == false) continue;
             auto bin_id = fv[ids[i]];
             b_csw[bin_id].count -= 1;
             b_csw[bin_id].sum -= R_tmp[i];
@@ -310,7 +342,6 @@ void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_m
           // Remember to disable the outer parallel for before enable it, otherwise you will need to enable nested parallel for
           // #pragma omp parallel for schedule(static,1) reduction(vec_csw_plus:b_csw) if (fi.size() > 65536 * 8)
           for(int i = 0;i < fi.size();++i){
-            if (unids_mp[fi[i]] == false) continue;
             if(in_leaf[fi[i]] == true){
               auto bin_id = fv[i];
               auto id = fi[i];
@@ -331,7 +362,6 @@ void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_m
         std::vector<uint8_t> &fv = (data->auxData)[fid];
         if (data->dense_f[fid]) {
           for(uint i = start;i < end;++i){
-            if (unids_mp[ids[i]] == false) continue;
             auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
             b_csw[bin_id].count -= 1;
             b_csw[bin_id].sum -= R_tmp[i];
@@ -345,7 +375,6 @@ void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_m
           // Remember to disable the outer parallel for before enable it, otherwise you will need to enable nested parallel for
           // #pragma omp parallel for schedule(static,1) reduction(vec_csw_plus:b_csw) if (fi.size() > 65536 * 8)
           for(int i = 0;i < fi.size();++i){
-            if (unids_mp[fi[i]] == false) continue;
             if(in_leaf[fi[i]] == true){
               auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
               auto id = fi[i];
@@ -366,7 +395,7 @@ void Tree::unlearnBinSort(int x, int sib, std::unordered_map<int, bool>& unids_m
     }
   )
 
-  setInLeaf<false>(start,end);
+  setInLeaf<false>(start,end, unids);
 }
 
 /**
@@ -447,9 +476,9 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
 }
 
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<int>& unids) {
+                       std::vector<uint> *unids_ptr) {
 
-  // this->ids = (*(std::vector<uint> *)ids);
+  this->unids = (*(std::vector<uint> *)unids_ptr);
   this->fids = fids;
   in_leaf.resize(data->Y.size());
 
@@ -464,38 +493,42 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   }
 
   // conver vector unids to map (id->bool)
-  std::unordered_map<int, bool> unids_mp;
+  std::unordered_map<uint, bool> unids_mp;
   for (int unid : unids) {
     unids_mp[unid] = true;
   }
   ids_blocklist = unids_mp;
 
   int n_nodes = nodes.size();
-  std::vector<std::vector<int>> retrain_subtrees; 
-  for (int i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
-  for (int i = 0; i < n_nodes; i++) {
+  std::vector<std::vector<uint>> retrain_subtrees;
+  std::vector<std::pair<uint, uint>> range(n_nodes, std::make_pair(0, 0));
+  if (range.size() > 0) range[0] = std::make_pair(0, (this->unids).size());
+  for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
+  for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].allow_build_subtree == true) continue;
-    unlearnBinSort(i, -1, unids_mp);
+    if (!nodes[i].is_leaf) splitUnids(range, i, nodes[i].left);
+    unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
     if (fabs(nodes[i].gain - -1) < 1e-4 || nodes[i].is_leaf == true) continue;
     std::vector<SplitInfo> &splits = nodes[i].gains;
     int splits_size = splits.size(), best_gain = nodes[i].gain;
-    for (int j = 0; j < splits_size; j++) {
+    for (uint j = 0; j < splits_size; j++) {
       double cur_gain = featureGain(i, splits[j].split_fi, splits[j].split_v);
       if (cur_gain > best_gain) {
          best_gain = cur_gain;
       }
     }
     if (best_gain - nodes[i].gain > 1e-4) {
-      std::vector<int> retrain_ids;
-      std::queue<int> q;
+      std::vector<uint> retrain_ids;
+      std::queue<uint> q;
       q.push(i);
+      std::sort((this->ids).begin() + nodes[i].start, (this->ids).begin() + nodes[i].end);
       while (!q.empty()) {
-        int cur_id = q.front();
+        uint cur_id = q.front();
         q.pop();
         nodes[cur_id].allow_build_subtree = true;
         retrain_ids.push_back(cur_id);
         int n_feats = data->data_header.n_feats;
-        for (int j = 0; j < n_feats; ++j) {
+        for (uint j = 0; j < n_feats; ++j) {
           memset((*hist)[cur_id][j].data(), 0, sizeof(HistBin) * (*hist)[cur_id][j].size());
         }
         if (nodes[cur_id].is_leaf == true) continue;
@@ -505,13 +538,14 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         if (cur_id != i) nodes[cur_id] = TreeNode();
         else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
       }
+      // std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
     }
   }
 
   uint lsz, rsz, msz = config->tree_min_node_size;
   int l, r;
-  for (std::vector<int> &retrain_ids : retrain_subtrees) {
+  for (std::vector<uint> &retrain_ids : retrain_subtrees) {
     int root = retrain_ids[0], n_iter = retrain_ids.size();
     trySplit(root, -1);
     for (int i = 1; i < n_iter; i += 2) {
@@ -966,6 +1000,101 @@ void Tree::saveTree(FILE *fp) {
       }
     }
   }
+}
+
+void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
+  uint pstart = range[x].first;
+  uint pend = range[x].second;
+  uint n_ids = pend - pstart;
+
+  int split_v = nodes[x].split_v;
+  uint fid = nodes[x].split_fi, li = pstart, ri = 0;
+  std::vector<data_quantized_t> &fv = (data->Xv)[fid];
+  std::vector<uint> unids_tmp_v(data->n_data);
+  uint *unids_tmp = unids_tmp_v.data();
+
+  if ((data->dense_f)[fid]) {
+    if (config->use_omp && n_ids > n_threads && n_threads > 1) {
+      uint buffer_sz = (n_ids + n_threads - 1) / n_threads;
+      std::vector<int> left_is(n_threads, 0), right_is(n_threads, 0);
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1) reduction(+ : li),
+        config->use_omp == true,
+        for (int t = 0; t < n_threads; ++t) {
+          uint left_i = 0, right_i = 0;
+          uint start = pstart + t * buffer_sz, end = start + buffer_sz;
+          if (end > pend) end = pend;
+          for (uint j = start; j < end; ++j) {
+            uint unid = unids[j];
+            if (fv[unid] <= split_v)
+              (*l_buffer)[t][left_i++] = unid;
+            else
+              (*r_buffer)[t][right_i++] = unid;
+          }
+
+          left_is[t] = left_i;
+          right_is[t] = right_i;
+          li += left_i;
+        }
+      )
+
+      std::vector<uint> left_sum(n_threads, 0), right_sum(n_threads, 0);
+      for (int t = 1; t < n_threads; ++t) {
+        left_sum[t] = left_sum[t - 1] + left_is[t - 1];
+        right_sum[t] = right_sum[t - 1] + right_is[t - 1];
+      }
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1),
+        config->use_omp == true,
+        for (int t = 0; t < n_threads; ++t) {
+          std::move((*l_buffer)[t].begin(), (*l_buffer)[t].begin() + left_is[t],
+                    unids.begin() + pstart + left_sum[t]);
+          std::move((*r_buffer)[t].begin(), (*r_buffer)[t].begin() + right_is[t],
+                    unids.begin() + li + right_sum[t]);
+        }
+      )
+    } else {
+      for (uint i = pstart; i < pend; ++i) {
+        if(fv[unids[i]] <= split_v){
+          unids[li] = unids[i];
+          ++li;
+        }else{
+          unids_tmp[ri] = unids[i];
+          ++ri;
+        }
+      }
+      std::copy(unids_tmp, unids_tmp + ri, unids.begin() + li);
+    }
+  } else {
+    int idx = 0;
+    std::vector<uint> &fi = (data->Xi)[fid];
+    int best_fsz = fi.size() - 1;
+    ushort v, unobserved = (data->data_header.unobserved_fv)[fid];
+
+    if (best_fsz >= 0) {
+      for (uint i = pstart; i < pend; ++i) {
+        uint id = unids[i];
+        while (idx < best_fsz && fi[idx] < id) {
+          ++idx;
+        }
+        v = (id == fi[idx]) ? fv[idx] : unobserved;
+        if (v <= split_v) {
+          unids[li++] = id;
+        } else {
+          unids_tmp[ri++] = id;
+        }
+      }
+      std::copy(unids_tmp, unids_tmp + ri, unids.begin() + li);
+    }
+  }
+
+  if (!(data->dense_f)[fid] && data->Xi[fid].size() <= 0) {
+    li = ((data->data_header.unobserved_fv)[fid] <= split_v) ? pend : pstart;
+  }
+  range[l].first = pstart;
+  range[l].second = li;
+  range[l + 1].first = li;
+  range[l + 1].second = pend;
 }
 
 /**

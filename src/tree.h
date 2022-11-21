@@ -74,7 +74,8 @@ class Tree {
 
   // ids stores the instance indices for each node
   std::vector<uint> ids;
-  std::unordered_map<int, bool> ids_blocklist;
+  std::vector<uint> unids;
+  std::unordered_map<uint, bool> ids_blocklist;
   uint* ids_tmp;
   double* H_tmp;
   double* R_tmp;
@@ -97,12 +98,11 @@ class Tree {
   ~Tree();
 
   virtual void binSort(int x, int sib);
-  virtual void unlearnBinSort(int x, int sib, \
-      std::unordered_map<int, bool>& unids_mp);
+  virtual void unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
-                   std::vector<int>& unids);
+                   std::vector<uint> *unids_ptr);
 
   void updateFeatureImportance(int iter);
 
@@ -135,12 +135,15 @@ class Tree {
 
   void saveTree(FILE *fileptr);
 
+  void splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l);
   void split(int x, int l);
 
   void trySplit(int x, int sib);
 
   inline void alignHessianResidual(const uint start, const uint end);
+  inline void alignHessianResidual(const uint start, const uint end, std::vector<uint>& ids);
   inline void initUnobserved(const uint start,const uint end,int& c_unobserved, double& r_unobserved, double& h_unobserved);
+  inline void initUnobserved(const uint start,const uint end,int &c_unobserved, double& r_unobserved, double& h_unobserved, std::vector<uint>& ids);
 
   template<bool val>
   inline void setInLeaf(uint start,uint end){
@@ -152,7 +155,21 @@ class Tree {
         omp parallel for schedule(static, 4096),
         config->use_omp == true && (end - start > 4096),
         for (int i = start; i < end; ++i) {
-          if (ids_blocklist[ids[i]] == true) continue;
+          in_leaf[ids[i]] = val;
+        }
+      )
+  }
+
+  template<bool val>
+  inline void setInLeaf(uint start,uint end,std::vector<uint>& ids){
+  // Note: This is a hacky parallel for. Since in_leaf is a specialized vector<bool>,
+  // parallel setting values whose indices are close can cause data race.
+  // Here we force a chunk size to be large enough (4096) to dodge the data race.
+  // We believe 4096 is large enough for most CPUs in 2022.
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 4096),
+        config->use_omp == true && (end - start > 4096),
+        for (int i = start; i < end; ++i) {
           in_leaf[ids[i]] = val;
         }
       )

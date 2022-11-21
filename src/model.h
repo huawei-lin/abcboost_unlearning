@@ -97,7 +97,7 @@ class GradientBoosting {
   virtual void saveModel(int iter);
   virtual void test();
   virtual void train();
-  virtual void unlearn(std::vector<int>& unidxs);
+  virtual void unlearn(std::vector<uint>& unidxs);
 
   virtual void savePrediction();
 
@@ -130,7 +130,6 @@ class Regression : public GradientBoosting {
   void test();
   void train();
   void init();
-  void unlearn(std::vector<int>& unidxs);
 
  private:
 	virtual void print_test_message(int iter,double iter_time,double& low_loss);
@@ -149,7 +148,6 @@ class BinaryMart : public GradientBoosting {
   BinaryMart(Data* data, Config* config);
   void test();
   void train();
-  void unlearn(std::vector<int>& unidxs);
   void init();
 	void updateF(Tree* tree);
 	double getLoss();
@@ -170,7 +168,7 @@ class Mart : public GradientBoosting {
   Mart(Data* data, Config* config);
   void test();
   void train();
-  void unlearn(std::vector<int>& unidxs);
+  void unlearn(std::vector<uint>& unidxs);
   void test_rank();
   friend class MOCMart;
 
@@ -184,7 +182,6 @@ class ABCMart : public GradientBoosting {
   void train_worst();
   void test();
   void train();
-  void unlearn(std::vector<int>& unidxs);
   void init();
 
  private:
@@ -207,7 +204,6 @@ class LambdaMart : public GradientBoosting {
   LambdaMart(Data* data, Config* config);
   void test();
   void train();
-  void unlearn(std::vector<int>& unidxs);
   void savePrediction();
 
  private:
@@ -219,7 +215,6 @@ class GBRank : public GradientBoosting {
   GBRank(Data* data, Config* config);
   void test();
   void train();
-  void unlearn(std::vector<int>& unidxs);
   void savePrediction();
 
  private:

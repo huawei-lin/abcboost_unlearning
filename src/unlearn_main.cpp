@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
   // config->model_use_logit =
   //     (config->model_name.find("logit") != std::string::npos);
 
-  if (config->model_name == "mart" /*|| config->model_name == "robustlogit"*/) {
+  if (config->model_name == "mart" || config->model_name == "robustlogit") {
     /*
     if(data->data_header.n_classes == 2){
       model = std::unique_ptr<ABCBoost::GradientBoosting>(
@@ -105,9 +105,9 @@ int main(int argc, char* argv[]) {
   model->loadModel();
   model->setupExperiment();
 
-  std::vector<int> unidxs;
-  int remove_num = 100;
-  for (int i = 1; i <= remove_num; i++) {
+  std::vector<uint> unidxs;
+  int remove_num = 5000;
+  for (uint i = 1; i <= remove_num; i++) {
     unidxs.push_back(i);
   }
   model->unlearn(unidxs);
