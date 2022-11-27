@@ -16,6 +16,7 @@
 #include <numeric>  // std::iota
 #include <queue>    // std::priority_queue
 #include <set>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -118,11 +119,10 @@ inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserv
   double h = h_unobserved;
   int c = c_unobserved;
   CONDITION_OMP_PARALLEL_FOR(
-    omp parallel for schedule(static) reduction(+: r, h),
+    omp parallel for schedule(static) reduction(+: r, h, c),
     config->use_omp == true && (end - start > 1024),
     for (int i = start; i < end; ++i) {
       auto id = ids[i];
-      if (ids_blocklist[id] == true) continue;
       r += R[id];
       h += H[id];
       c++;
@@ -140,7 +140,7 @@ inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserv
   double h = h_unobserved;
   int c = c_unobserved;
   CONDITION_OMP_PARALLEL_FOR(
-    omp parallel for schedule(static) reduction(+: r, h),
+    omp parallel for schedule(static) reduction(+: r, h, c),
     config->use_omp == true && (end - start > 1024),
     for (int i = start; i < end; ++i) {
       auto id = ids[i];
@@ -190,7 +190,6 @@ void Tree::binSort(int x, int sib) {
         if (data->dense_f[fid]) {
           if(start == 0 && end == data->n_data){
             for(uint i = start;i < end;++i){
-              if (ids_blocklist[ids[i]] == true) continue;
               auto bin_id = fv[i];
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R[i];
@@ -198,7 +197,6 @@ void Tree::binSort(int x, int sib) {
             }
           }else{
             for(uint i = start;i < end;++i){
-              if (ids_blocklist[ids[i]] == true) continue;
               auto bin_id = fv[ids[i]];
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R_tmp[i];
@@ -216,7 +214,6 @@ void Tree::binSort(int x, int sib) {
             if(in_leaf[fi[i]] == true){
               auto bin_id = fv[i];
               auto id = fi[i];
-              if (ids_blocklist[id] == true) continue;
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R[id];
               b_csw[bin_id].weight += is_weighted ? H[id] : 1;
@@ -235,7 +232,6 @@ void Tree::binSort(int x, int sib) {
         if (data->dense_f[fid]) {
           if(start == 0 && end == data->n_data){
             for(uint i = start;i < end;++i){
-              if (ids_blocklist[ids[i]] == true) continue;
               auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R[i];
@@ -243,7 +239,6 @@ void Tree::binSort(int x, int sib) {
             }
           }else{
             for(uint i = start;i < end;++i){
-              if (ids_blocklist[ids[i]] == true) continue;
               auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R_tmp[i];
@@ -261,7 +256,6 @@ void Tree::binSort(int x, int sib) {
             if(in_leaf[fi[i]] == true){
               auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
               auto id = fi[i];
-              if (ids_blocklist[id] == true) continue;
               b_csw[bin_id].count += 1;
               b_csw[bin_id].sum += R[id];
               b_csw[bin_id].weight += is_weighted ? H[id] : 1;
@@ -308,18 +302,19 @@ void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint
   const auto* R = residual;
   uint fsz = fids->size();
 
-  if(!(start == 0 && end == unids.size())){
-    alignHessianResidual(start,end, unids);
-  }
+  if (sib == -1) {
+    if(!(start == 0 && end == data->n_data)){
+      alignHessianResidual(start,end,ids);
+    }
 
-  setInLeaf<true>(start,end, unids);
+    double r_unobserved = 0.0;
+    double h_unobserved = 0.0;
+    int c_unobserved = 0;
+    initUnobserved(start,end,c_unobserved,r_unobserved,h_unobserved,ids);
 
-  double r_unobserved = 0.0;
-  double h_unobserved = 0.0;
-  int c_unobserved = 0;
-  initUnobserved(start, end, c_unobserved, r_unobserved, h_unobserved, unids);
+    setInLeaf<true>(start,end,ids);
 
-  CONDITION_OMP_PARALLEL_FOR(
+    CONDITION_OMP_PARALLEL_FOR(
       omp parallel for schedule(guided),
       config->use_omp == 1,
     for (int j = 0; j < fsz; ++j) {
@@ -328,11 +323,20 @@ void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint
       if(data->auxDataWidth[fid] == 0){
         std::vector<data_quantized_t> &fv = (data->Xv)[fid];
         if (data->dense_f[fid]) {
-          for(uint i = start;i < end;++i){
-            auto bin_id = fv[ids[i]];
-            b_csw[bin_id].count -= 1;
-            b_csw[bin_id].sum -= R_tmp[i];
-            b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+          if(start == 0 && end == data->n_data){
+            for(uint i = start;i < end;++i){
+              auto bin_id = fv[i];
+              b_csw[bin_id].count -= 1;
+              b_csw[bin_id].sum -= R[i];
+              b_csw[bin_id].weight -= is_weighted ? H[i] : 1;
+            }
+          }else{
+            for(uint i = start;i < end;++i){
+              auto bin_id = fv[ids[i]];
+              b_csw[bin_id].count -= 1;
+              b_csw[bin_id].sum -= R_tmp[i];
+              b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+            }
           }
         } else {
           std::vector<uint> &fi = (data->Xi)[fid];
@@ -361,11 +365,20 @@ void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint
       }else{
         std::vector<uint8_t> &fv = (data->auxData)[fid];
         if (data->dense_f[fid]) {
-          for(uint i = start;i < end;++i){
-            auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
-            b_csw[bin_id].count -= 1;
-            b_csw[bin_id].sum -= R_tmp[i];
-            b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+          if(start == 0 && end == data->n_data){
+            for(uint i = start;i < end;++i){
+              auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
+              b_csw[bin_id].count -= 1;
+              b_csw[bin_id].sum -= R[i];
+              b_csw[bin_id].weight -= is_weighted ? H[i] : 1;
+            }
+          }else{
+            for(uint i = start;i < end;++i){
+              auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
+              b_csw[bin_id].count -= 1;
+              b_csw[bin_id].sum -= R_tmp[i];
+              b_csw[bin_id].weight -= is_weighted ? H_tmp[i] : 1;
+            }
           }
         } else {
           std::vector<uint> &fi = (data->Xi)[fid];
@@ -393,9 +406,30 @@ void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint
         }
       }
     }
-  )
+    )
 
-  setInLeaf<false>(start,end, unids);
+    setInLeaf<false>(start,end,ids);
+
+  } else {
+    CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(guided),
+      config->use_omp == true,
+      for (int j = 0; j < fsz; ++j) {
+        uint fid = (data->valid_fi)[(*fids)[j]];
+        std::vector<HistBin> &b_csw = (*hist)[x][fid];
+        int parent = nodes[x].parent;
+        std::vector<HistBin> &pb_csw =
+            (*hist)[parent][fid];
+        std::vector<HistBin> &sb_csw = (*hist)[sib][fid];
+        for (int k = 0; k < b_csw.size(); ++k) {
+          b_csw[k].count = pb_csw[k].count - sb_csw[k].count;
+          b_csw[k].sum = pb_csw[k].sum - sb_csw[k].sum;
+          b_csw[k].weight =
+              std::max((hist_t).0, pb_csw[k].weight - sb_csw[k].weight);
+        }
+      }
+    )
+  }
 }
 
 /**
@@ -456,8 +490,7 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
       continue;
     }
     
-    // if(i + 1 < n_iter){
-    if(i < n_iter){
+    if(i + 1 < n_iter){
       if (lsz < rsz) {
         trySplit(l, -1);
         //trySplit(r, -1); is replaced by the subtraction
@@ -475,12 +508,44 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
   in_leaf.shrink_to_fit();
 }
 
+void Tree::deleteIds() {
+  std::vector<uint> unids_tmp = unids;
+
+  std::map<int, std::vector<int*>> split_ptr;
+  for (int i = 0; i < nodes.size(); i++) {
+    split_ptr[nodes[i].start].push_back(&nodes[i].start);
+    split_ptr[nodes[i].end].push_back(&nodes[i].end);
+  }
+
+  int last_offset = 0, cur_offset = 0;
+  for (std::map<int, std::vector<int*>>::iterator it = std::next(split_ptr.begin());
+       it != split_ptr.end(); it++) {
+    for (std::vector<uint>::iterator unid_ptr = unids_tmp.begin();
+         unid_ptr != unids_tmp.end(); ) {
+      std::vector<uint>::iterator left = ids.begin() + std::prev(it)->first - last_offset;
+      std::vector<uint>::iterator right = ids.begin() + it->first - cur_offset;
+      std::vector<uint>::iterator target = std::lower_bound(left, right, *unid_ptr);
+      if (target == right || *target != *unid_ptr) {
+        unid_ptr++;
+        continue;
+      }
+      unid_ptr = unids_tmp.erase(unid_ptr);
+      ids.erase(target);
+      cur_offset += 1;
+    }
+    for (int* e : it->second) *e -= cur_offset;
+    last_offset = cur_offset;
+  }
+}
+
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
                        std::vector<uint> *unids_ptr) {
 
   this->unids = (*(std::vector<uint> *)unids_ptr);
   this->fids = fids;
   in_leaf.resize(data->Y.size());
+
+  deleteIds();
 
   dense_fids.reserve(fids->size());
   sparse_fids.reserve(fids->size());
@@ -492,25 +557,35 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       sparse_fids.push_back(fid);
   }
 
-  // conver vector unids to map (id->bool)
-  std::unordered_map<uint, bool> unids_mp;
-  for (int unid : unids) {
-    unids_mp[unid] = true;
-  }
-  ids_blocklist = unids_mp;
-
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
   std::vector<std::pair<uint, uint>> range(n_nodes, std::make_pair(0, 0));
   if (range.size() > 0) range[0] = std::make_pair(0, (this->unids).size());
+#pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].allow_build_subtree == true) continue;
     if (!nodes[i].is_leaf) splitUnids(range, i, nodes[i].left);
-    unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+
+    if (i == 0) {
+      unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+    } else if (i%2 == 1) { // left
+      int lsz = nodes[i].end - nodes[i].start;
+      int rsz = nodes[i + 1].end - nodes[i + 1].start;
+      if (lsz <= rsz) unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+      else unlearnBinSort(i + 1, -1, range[i].first, range[i].second, unids);
+    } else { // right
+      int lsz = nodes[i - 1].end - nodes[i - 1].start;
+      int rsz = nodes[i].end - nodes[i].start;
+      if (lsz <= rsz) unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
+      else unlearnBinSort(i - 1, i, range[i].first, range[i].second, unids);
+    }
+//     if (i == 0 || i%2 == 1) unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+//     else unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
     if (fabs(nodes[i].gain - -1) < 1e-4 || nodes[i].is_leaf == true) continue;
     std::vector<SplitInfo> &splits = nodes[i].gains;
     int splits_size = splits.size(), best_gain = nodes[i].gain;
+#pragma omp parallel for
     for (uint j = 0; j < splits_size; j++) {
       double cur_gain = featureGain(i, splits[j].split_fi, splits[j].split_v);
       if (cur_gain > best_gain) {
@@ -571,8 +646,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         continue;
       }
 
-      // if(i + 2 < n_iter){
-      if(i < n_iter){
+      if(i + 1 < n_iter){
         if (lsz < rsz) {
           trySplit(l, -1);
           //trySplit(r, -1); is replaced by the subtraction
@@ -1220,6 +1294,8 @@ void Tree::trySplit(int x, int sib) {
   SplitInfo best_info;
 
   best_info.gain = -1;
+  std::vector<std::pair<double,int>> gains(fids->size());
+  std::pair<double,int> gain_tmp;
   nodes[x].gains.reserve(fids->size());
   
   CONDITION_OMP_PARALLEL_FOR(
@@ -1227,20 +1303,19 @@ void Tree::trySplit(int x, int sib) {
     config->use_omp == true,
     for (int j = 0; j < fids->size(); ++j) {
         int fid = (data->valid_fi)[(*fids)[j]];
-        std::pair<double, int> gain_pair = featureGain(x, fid);
-        if (gain_pair.second != -1) {
-          nodes[x].gains.push_back(SplitInfo(fid, gain_pair.first, gain_pair.second));
-        }
+        gain_tmp = featureGain(x, fid);
+        gains[j] = gain_tmp;
+        if (gains[j].second == -1) continue;
+        nodes[x].gains.emplace_back(SplitInfo(fid, gain_tmp.first, gain_tmp.second));
     }
   )
-  for(int j = 0;j < nodes[x].gains.size();++j){
-    const auto& info = nodes[x].gains[j];
-    int fid = info.split_fi, split_v = info.split_v;
-    double gain = info.gain;
-    if (gain > best_info.gain) {
-      best_info.gain = gain;
+  for(int j = 0;j < gains.size();++j){
+    const auto& info = gains[j];
+    int fid = (data->valid_fi)[(*fids)[j]];
+    if (info.first > best_info.gain) {
+      best_info.gain = info.first;
       best_info.split_fi = fid;
-      best_info.split_v = split_v;
+      best_info.split_v = info.second;
     }
   }
 

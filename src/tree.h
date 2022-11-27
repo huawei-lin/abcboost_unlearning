@@ -75,7 +75,6 @@ class Tree {
   // ids stores the instance indices for each node
   std::vector<uint> ids;
   std::vector<uint> unids;
-  std::unordered_map<uint, bool> ids_blocklist;
   uint* ids_tmp;
   double* H_tmp;
   double* R_tmp;
@@ -101,6 +100,7 @@ class Tree {
   virtual void unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
+  void deleteIds();
   void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
 

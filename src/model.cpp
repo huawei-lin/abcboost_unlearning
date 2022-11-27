@@ -1246,7 +1246,7 @@ void Mart::train() {
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
-    if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+    // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
     if(loss < config->stop_tolerance){
       config->model_n_iterations = m + 1;
       break;
@@ -1301,7 +1301,7 @@ void Mart::unlearn(std::vector<uint>& unids) {
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
-    if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+    // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
     if(loss < config->stop_tolerance){
       config->model_n_iterations = m + 1;
       break;
