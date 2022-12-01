@@ -196,6 +196,9 @@ class Data {
   std::string normalize = "";
   std::vector<ColumnStat> column_stat;
 
+  // for unlearning
+  void loadUnlearningIndies(std::string path, std::vector<unsigned int>& unids);
+
  private:
   void adaptiveQuantization();
   unsigned short discretize(std::vector<double>& bin_starts, double value);

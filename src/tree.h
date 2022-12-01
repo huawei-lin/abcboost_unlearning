@@ -79,6 +79,7 @@ class Tree {
   double* H_tmp;
   double* R_tmp;
   std::vector<uint> *fids;
+  std::vector<uint> fids_record;
   std::vector<int> dense_fids;
   std::vector<int> sparse_fids;
 

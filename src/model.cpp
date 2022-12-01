@@ -531,6 +531,7 @@ void GradientBoosting::setupExperiment() {
   fids.resize(data->valid_fi.size());
   if (!sample_data) std::iota(ids.begin(), ids.end(), 0);
   if (!sample_feature) std::iota(fids.begin(), fids.end(), 0);
+  fids_record.reserve(config->model_n_iterations);
 
   printf(
       "\nModel Summary: | model: %s | mode: %s |"
@@ -1222,6 +1223,7 @@ void Mart::train() {
       fids =
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
+      fids_record.emplace_back(fids);
     
     computeHessianResidual();
 
@@ -1280,6 +1282,8 @@ void Mart::unlearn(std::vector<uint>& unids) {
       fids =
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
+
+    if (fids_record.size() != 0) fids = fids_record[m];
 
     computeHessianResidual();
 
@@ -1354,6 +1358,15 @@ void GradientBoosting::serializeTrees(FILE *fp, int M) {
   int K = M > 0 ? additive_trees[0].size() : 0;
   Utils::serialize(fp, M);
   Utils::serialize(fp, K);
+  int len_fids_record = fids_record.size();
+  fwrite(&len_fids_record, sizeof(len_fids_record), 1, fp);
+  for (int i = 0; i < len_fids_record; i++) {
+    int len_fids = fids_record[i].size();
+    fwrite(&len_fids, sizeof(len_fids), 1, fp);
+    for (int j = 0; j < len_fids; j++) {
+      fwrite(&fids_record[i][j], sizeof(fids_record[i][j]), 1, fp);
+    }
+  }
   for (int i = 0; i < M; ++i)
     for (int j = 0; j < K; ++j) {
       if (additive_trees[i][j] == nullptr) {
@@ -1378,6 +1391,16 @@ void GradientBoosting::deserializeTrees(FILE *fp) {
   if(config->model_mode == "train" && M >= config->model_n_iterations){
     fprintf(stderr,"[Warning] Command line specifies %d iterations, while the model has already been trained with %d iterations! No need to do anyting.\n",config->model_n_iterations,M);
     exit(0);
+  }
+  int len_fids_record, len_fids;
+  fread(&len_fids_record, sizeof(len_fids_record), 1, fp);
+  if (len_fids_record != 0) fids_record.resize(len_fids_record);
+  for (int i = 0; i < len_fids_record; i++) {
+    fread(&len_fids, sizeof(len_fids), 1, fp);
+    fids_record[i].resize(len_fids);
+    for (int j = 0; j < len_fids; j++) {
+      fread(&fids_record[i][j], sizeof(fids_record[i][j]), 1, fp);
+    }
   }
 
   for (int i = 0; i < M; ++i){

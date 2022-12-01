@@ -52,6 +52,9 @@ int main(int argc, char* argv[]) {
   }
   data->constructAuxData();
 
+  std::vector<uint> unids;
+  data->loadUnlearningIndies(config->unlearning_ids_path, unids);
+
   std::unique_ptr<ABCBoost::GradientBoosting> model;
 
   // config->model_use_logit =
@@ -105,11 +108,6 @@ int main(int argc, char* argv[]) {
   model->loadModel();
   model->setupExperiment();
 
-  std::vector<uint> unidxs;
-  int remove_num = 5000;
-  for (uint i = 1; i <= remove_num; i++) {
-    unidxs.push_back(i);
-  }
-  model->unlearn(unidxs);
+  model->unlearn(unids);
   return 0;
 }

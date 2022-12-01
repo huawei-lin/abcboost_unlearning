@@ -444,6 +444,7 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
   this->ids = (*(std::vector<uint> *)ids);
   this->fids = fids;
   in_leaf.resize(data->Y.size());
+  fids_record = (*(std::vector<uint> *)fids);
 
   dense_fids.reserve(fids->size());
   sparse_fids.reserve(fids->size());
@@ -602,7 +603,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         q.pop();
         nodes[cur_id].allow_build_subtree = true;
         retrain_ids.push_back(cur_id);
-        int n_feats = data->data_header.n_feats;
+        int n_feats = data->data_header.n_feats, hist_size;
         for (uint j = 0; j < n_feats; ++j) {
           memset((*hist)[cur_id][j].data(), 0, sizeof(HistBin) * (*hist)[cur_id][j].size());
         }
@@ -902,22 +903,27 @@ void Tree::populateTree(FILE *fileptr) {
     nodes[n] = node;
   }
 
-  int hist_size_1, hist_size_2, hist_size_3;
+  int hist_size_1, hist_size_2, hist_size_3, fid;
   ret += fread(&hist_size_1, sizeof(hist_size_1), 1, fileptr);
   hist_record.resize(hist_size_1);
   for (int i = 0; i < hist_size_1; i++) {
     ret += fread(&hist_size_2, sizeof(hist_size_2), 1, fileptr);
-    hist_record[i].resize(hist_size_2);
+    hist_record[i].resize(data->data_header.n_feats);
+#pragma omp parallel for schedule(guided)
+    for (int j = 0; j < data->data_header.n_feats; ++j) {
+      hist_record[i][j].resize(data->data_header.n_bins_per_f[j]);
+    }
     for (int j = 0; j < hist_size_2; j++) {
-      ret += fread(&hist_size_3, sizeof(hist_size_3), 1, fileptr);
-      hist_record[i][j].resize(hist_size_3);
+      ret += fread(&fid, sizeof(fid), 1, fileptr);
+      hist_size_3 = data->data_header.n_bins_per_f[fid];
+      hist_record[i][fid].resize(hist_size_3);
       for (int k = 0; k < hist_size_3; k++) {
-        ret += fread(&hist_record[i][j][k].count, \
-               sizeof(hist_record[i][j][k].count), 1, fileptr);
-        ret += fread(&hist_record[i][j][k].sum, \
-               sizeof(hist_record[i][j][k].sum), 1, fileptr);
-        ret += fread(&hist_record[i][j][k].weight, \
-               sizeof(hist_record[i][j][k].weight), 1, fileptr);
+        ret += fread(&hist_record[i][fid][k].count, \
+               sizeof(hist_record[i][fid][k].count), 1, fileptr);
+        ret += fread(&hist_record[i][fid][k].sum, \
+               sizeof(hist_record[i][fid][k].sum), 1, fileptr);
+        ret += fread(&hist_record[i][fid][k].weight, \
+               sizeof(hist_record[i][fid][k].weight), 1, fileptr);
       }
     }
   }
@@ -1059,17 +1065,18 @@ void Tree::saveTree(FILE *fp) {
   int hist_size_1 = hist_record.size();
   fwrite(&hist_size_1, sizeof(hist_size_1), 1, fp);
   for (int i = 0; i < hist_size_1; i++) {
-    int hist_size_2 = hist_record[i].size();
+    int hist_size_2 = fids_record.size();
     fwrite(&hist_size_2, sizeof(hist_size_2), 1, fp);
     for (int j = 0; j < hist_size_2; j++) {
-      int hist_size_3 = hist_record[i][j].size();
-      fwrite(&hist_size_3, sizeof(hist_size_3), 1, fp);
+      int fid = (data->valid_fi)[fids_record[j]];
+      int hist_size_3 = hist_record[i][fid].size();
+      fwrite(&fid, sizeof(fid), 1, fp);
       for (int k = 0; k < hist_size_3; k++) {
-        fwrite(&hist_record[i][j][k].count, \
+        fwrite(&hist_record[i][fid][k].count, \
                sizeof(hist_record[i][j][k].count), 1, fp);
-        fwrite(&hist_record[i][j][k].sum, \
+        fwrite(&hist_record[i][fid][k].sum, \
                sizeof(hist_record[i][j][k].sum), 1, fp);
-        fwrite(&hist_record[i][j][k].weight, \
+        fwrite(&hist_record[i][fid][k].weight, \
                sizeof(hist_record[i][j][k].weight), 1, fp);
       }
     }
@@ -1296,6 +1303,7 @@ void Tree::trySplit(int x, int sib) {
   best_info.gain = -1;
   std::vector<std::pair<double,int>> gains(fids->size());
   std::pair<double,int> gain_tmp;
+  nodes[x].gains.clear();
   nodes[x].gains.reserve(fids->size());
   
   CONDITION_OMP_PARALLEL_FOR(
@@ -1305,7 +1313,7 @@ void Tree::trySplit(int x, int sib) {
         int fid = (data->valid_fi)[(*fids)[j]];
         gain_tmp = featureGain(x, fid);
         gains[j] = gain_tmp;
-        if (gains[j].second == -1) continue;
+        if (gain_tmp.second == -1) continue;
         nodes[x].gains.emplace_back(SplitInfo(fid, gain_tmp.first, gain_tmp.second));
     }
   )

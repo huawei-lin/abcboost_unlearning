@@ -651,6 +651,60 @@ void Data::loadMemoryColumnMajorMatrix(double* Y_matrix, double* X_matrix,
   printf("loading done\n");
 }
 
+void Data::loadUnlearningIndies(std::string path, std::vector<unsigned int>& unids) {
+  const char* delimiter = " ,\t";
+  std::vector<std::string> all_files = Config::split(path);
+  std::string line;
+  std::vector<std::string> buffer;
+
+  for(auto path : all_files){
+    std::ifstream infile(path);
+    while (getline(infile, line)) {
+      buffer.push_back(line);
+    }
+  }
+
+  int T = 1;
+#pragma omp parallel
+#pragma omp master
+  {
+    T = config->n_threads;  // omp_get_num_threads();
+  }
+  omp_set_num_threads(T);
+  int n_lines = buffer.size();
+  int step = (n_lines + T - 1) / T;
+  std::vector<std::vector<unsigned int>> id_global;
+  id_global.resize(T);
+
+  omp_set_num_threads(T);
+
+#pragma omp parallel
+  {
+    int t = omp_get_thread_num();
+    int start = t * step, end = std::min(n_lines, (t + 1) * step);
+
+    for (int i = start; i < end; ++i) {
+      char* token = &(buffer[i][0]);
+      char* ptr;
+      char* pos = NULL;
+      while (true) {
+        if (pos == NULL) pos = strtok_r(token, delimiter, &ptr);
+        else pos = strtok_r(NULL, delimiter, &ptr);
+        if (pos == NULL) break;
+        unsigned int val = atoi(pos);
+        id_global[t].push_back(val);
+      }
+    }
+  }
+
+  for (int i = 0; i < T; i++) {
+    unids.insert(unids.end(), id_global[i].begin(), id_global[i].end());
+  }
+  std::sort(unids.begin(), unids.end());
+  std::vector<unsigned int>::iterator last = std::unique(unids.begin(), unids.end());
+  unids.erase(last, unids.end());
+}
+
 /**
  * Load data from the data path.
  * @param path the data path.

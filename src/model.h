@@ -59,6 +59,7 @@ class GradientBoosting {
 	std::vector<double> hessians,residuals;
   std::vector<double> feature_importance;
   std::vector<unsigned int> ids, fids;
+  std::vector<std::vector<unsigned int>> fids_record;
   std::string experiment_path;
 
   Config* config;

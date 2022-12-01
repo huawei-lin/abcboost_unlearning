@@ -138,6 +138,8 @@ class Config {
   // Runtime variables
   std::string formatted_output_name = "";
 
+  // Unlearning config
+  std::string unlearning_ids_path = "";
 
   Config(const char* path = "config.txt") {
     std::ifstream file(path);
@@ -380,6 +382,8 @@ class Config {
 * `-regression_use_hessian` 0/1 (default 1) whether use second-order derivatives in the regression. This parameter only takes into effect when `-regression_lp_loss p` is set and `p` is greater than `2`.\n\
 * `-regression_huber_loss`, `-huber` 0/1 (default 0) whether use huber loss\n\
 * `-regression_huber_delta`, `-huber_delta` the delta parameter for huber loss. This parameter only takes into effect when `-regression_huber_loss 1` is set\n\
+#### Unlearning related:\n\
+* `-unlearning_ids_path` path to unlearning's indies\n\
 #### Parallelism:\n\
 * `-n_threads`, `-threads` (default 1)\n\
 * `-use_gpu` 0/1 (default 1 if compiled with CUDA) whether use GPU to train models. This parameter only takes into effect when the flag `-DCUDA=on` is set in `cmake`.\n\
@@ -627,6 +631,8 @@ class Config {
         abc_sample_rate = stod(value);
       } else if (key == "model_abc_sample_min_data" || key == "abc_sample_min_data") {
         abc_sample_min_data = stoi(value);
+      } else if (key == "unlearning_ids_path") {
+        unlearning_ids_path = std::string(value);
       } else {
         printf("[ERROR] Unknown argument [%s]\n", key.c_str());
         if(from_wrapper == false){
