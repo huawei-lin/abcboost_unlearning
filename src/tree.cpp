@@ -513,30 +513,62 @@ void Tree::deleteIds() {
   std::vector<uint> unids_tmp = unids;
 
   std::map<int, std::vector<int*>> split_ptr;
+  std::vector<uint> split_ids;
+  int split_num = n_leaves + 1;
+  split_ids.reserve(split_num);
+
   for (int i = 0; i < nodes.size(); i++) {
     split_ptr[nodes[i].start].push_back(&nodes[i].start);
     split_ptr[nodes[i].end].push_back(&nodes[i].end);
   }
+  for (auto p : split_ptr) split_ids.emplace_back(p.first);
 
-  int last_offset = 0, cur_offset = 0;
-  for (std::map<int, std::vector<int*>>::iterator it = std::next(split_ptr.begin());
-       it != split_ptr.end(); it++) {
-    for (std::vector<uint>::iterator unid_ptr = unids_tmp.begin();
-         unid_ptr != unids_tmp.end(); ) {
-      std::vector<uint>::iterator left = ids.begin() + std::prev(it)->first - last_offset;
-      std::vector<uint>::iterator right = ids.begin() + it->first - cur_offset;
-      std::vector<uint>::iterator target = std::lower_bound(left, right, *unid_ptr);
-      if (target == right || *target != *unid_ptr) {
-        unid_ptr++;
-        continue;
+  std::vector<std::vector<uint>> id_global;
+  std::vector<int> offset(split_num);
+  std::vector<uint> id_records;
+  id_global.resize(split_num);
+  id_records.reserve(unids_tmp.size());
+
+#pragma omp parallel for num_threads(config->n_threads)
+  for (int i = 1; i < split_num; i++) {
+    std::vector<uint>::iterator left_it, right_it, target_it;
+    int left, right;
+    left = split_ids[i - 1], right = split_ids[i];
+    left_it = ids.begin() + left;
+    right_it = ids.begin() + right;
+    for (uint unid : unids_tmp) {
+      target_it = std::lower_bound(left_it, right_it, unid);
+      if (target_it != right_it && *target_it == unid) {
+        left_it = target_it;
+        id_global[i].emplace_back(unid);
       }
-      unid_ptr = unids_tmp.erase(unid_ptr);
-      ids.erase(target);
-      cur_offset += 1;
     }
-    for (int* e : it->second) *e -= cur_offset;
-    last_offset = cur_offset;
   }
+
+  int sum_offset = 0, cnt = 0;
+  for (int i = 0; i < split_num; i++) {
+    id_records.insert(id_records.end(), id_global[i].begin(), id_global[i].end());
+    sum_offset += id_global[i].size();
+    offset[cnt] = sum_offset;
+    cnt++;
+  }
+
+  for (int i = 0; i < split_num; i++) {
+    for (int* e : split_ptr[split_ids[i]]) *e -= offset[i];
+  }
+
+  int last_ptr = 0, cur_ptr = 0, j = 0, ids_len = ids.size(), record_len = id_records.size();
+  while (cur_ptr < ids_len) {
+    if (j >= record_len || ids[cur_ptr] != id_records[j]) {
+      ids[last_ptr] = ids[cur_ptr];
+      last_ptr++;
+      cur_ptr++;
+    } else {
+      cur_ptr++;
+      j++;
+    }
+  }
+  ids.resize(last_ptr);
 }
 
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
@@ -581,19 +613,28 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       if (lsz <= rsz) unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
       else unlearnBinSort(i - 1, i, range[i].first, range[i].second, unids);
     }
-//     if (i == 0 || i%2 == 1) unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
-//     else unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
     if (fabs(nodes[i].gain - -1) < 1e-4 || nodes[i].is_leaf == true) continue;
+
     std::vector<SplitInfo> &splits = nodes[i].gains;
-    int splits_size = splits.size(), best_gain = nodes[i].gain;
+    int splits_size = splits.size(), best_gain = nodes[i].gain, best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
+    std::vector<std::pair<double,int>> gains(splits_size);
+
 #pragma omp parallel for
     for (uint j = 0; j < splits_size; j++) {
-      double cur_gain = featureGain(i, splits[j].split_fi, splits[j].split_v);
-      if (cur_gain > best_gain) {
-         best_gain = cur_gain;
+      std::pair<double, int> tmp  = featureGain(i, splits[j].split_fi);
+      gains[j] = tmp;
+    }
+
+    for(int j = 0; j < gains.size();++j){
+      const auto& info = gains[j];
+      if (info.first > best_gain) {
+          best_gain = info.first;
+          best_v = info.second;
+          best_fi = splits[j].split_fi;
       }
     }
-    if (best_gain - nodes[i].gain > 1e-4) {
+
+    if (!(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
       std::vector<uint> retrain_ids;
       std::queue<uint> q;
       q.push(i);
@@ -614,7 +655,6 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         if (cur_id != i) nodes[cur_id] = TreeNode();
         else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
       }
-      // std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
     }
   }
@@ -1304,7 +1344,7 @@ void Tree::trySplit(int x, int sib) {
   std::vector<std::pair<double,int>> gains(fids->size());
   std::pair<double,int> gain_tmp;
   nodes[x].gains.clear();
-  nodes[x].gains.reserve(fids->size());
+  nodes[x].gains.resize(fids->size());
   
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(guided),
@@ -1313,8 +1353,7 @@ void Tree::trySplit(int x, int sib) {
         int fid = (data->valid_fi)[(*fids)[j]];
         gain_tmp = featureGain(x, fid);
         gains[j] = gain_tmp;
-        if (gain_tmp.second == -1) continue;
-        nodes[x].gains.emplace_back(SplitInfo(fid, gain_tmp.first, gain_tmp.second));
+        nodes[x].gains[j] = SplitInfo(fid, gain_tmp.first, gain_tmp.second);
     }
   )
   for(int j = 0;j < gains.size();++j){
