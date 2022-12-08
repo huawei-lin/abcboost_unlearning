@@ -95,6 +95,7 @@ class GradientBoosting {
   void zeroBins();
 
   virtual int loadModel();
+  void deleteIds(std::vector<unsigned int>& unids);
   virtual void saveModel(int iter);
   virtual void test();
   virtual void train();

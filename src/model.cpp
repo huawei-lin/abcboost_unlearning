@@ -309,15 +309,15 @@ double GradientBoosting::getAccuracy() {
 int GradientBoosting::getError() {
   int accuracy = 0;
 #pragma omp parallel for reduction(+ : accuracy)
-  for (int i = 0; i < data->n_data; ++i) {
-    int prediction = 0;
+  for (int k = 0; k < ids.size(); ++k) {
+    int prediction = 0, i = ids[k];
     for (int k = 1; k < data->data_header.n_classes; ++k)
       if (F[k][i] > F[prediction][i])
         prediction = k;
     if (prediction == int(data->Y[i]))
       ++accuracy;
   }
-  return data->n_data - accuracy;
+  return ids.size() - accuracy;
 }
 
 /**
@@ -463,6 +463,9 @@ std::vector<unsigned int> GradientBoosting::sample(int n, double sample_rate) {
  * Save model.
  */
 void GradientBoosting::saveModel(int iter) {
+  if(config->model_mode == "unlearn") {
+    config->model_suffix = "_unlearn" + config->model_suffix;
+  }
   FILE *model_out =
       fopen((experiment_path + config->model_suffix).c_str(), "wb");
   if (model_out == NULL) {
@@ -527,9 +530,12 @@ void GradientBoosting::setupExperiment() {
   sample_data = (config->model_data_sample_rate < 1);
   sample_feature = (config->model_feature_sample_rate < 1);
 
-  ids.resize(data->n_data);
+  if (ids.size() == 0 || config->model_mode != "unlearn") {
+    ids.resize(data->n_data);
+    if (!sample_data) std::iota(ids.begin(), ids.end(), 0);
+  }
+
   fids.resize(data->valid_fi.size());
-  if (!sample_data) std::iota(ids.begin(), ids.end(), 0);
   if (!sample_feature) std::iota(fids.begin(), fids.end(), 0);
   fids_record.reserve(config->model_n_iterations);
 
@@ -1262,10 +1268,11 @@ void Mart::train() {
 
 }
 
-void Mart::unlearn(std::vector<uint>& unids) {
+void Mart::unlearn(std::vector<unsigned int>& unids) {
   // set up buffers for OpenMP
   std::vector<std::vector<std::vector<unsigned int>>> buffer =
       GradientBoosting::initBuffer();
+  deleteIds(unids);
 
   // build one tree if it is binary prediction
   int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
@@ -1313,7 +1320,7 @@ void Mart::unlearn(std::vector<uint>& unids) {
   }
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
-  // if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_model) saveModel(config->model_n_iterations);
 
   if (config->save_importance) getTopFeatures();
 
@@ -1354,10 +1361,28 @@ int GradientBoosting::loadModel() {
   return 0;
 }
 
+void GradientBoosting::deleteIds(std::vector<uint>& unids) {
+  int len_unids = unids.size(), j = 0, cnt = 0;
+  for (int i = 0; i < ids.size(); i++) {
+    if (j < len_unids && ids[i] == unids[j]) {
+      j++;
+    } else {
+      ids[cnt] = ids[i];
+      cnt++;
+    }
+  }
+  ids.resize(cnt);
+}
+
 void GradientBoosting::serializeTrees(FILE *fp, int M) {
   int K = M > 0 ? additive_trees[0].size() : 0;
   Utils::serialize(fp, M);
   Utils::serialize(fp, K);
+  int len_ids = ids.size();
+  fwrite(&len_ids, sizeof(len_ids), 1, fp);
+  for (int i = 0; i < len_ids; i++) {
+    fwrite(&ids[i], sizeof(ids[i]), 1, fp);
+  }
   int len_fids_record = fids_record.size();
   fwrite(&len_fids_record, sizeof(len_fids_record), 1, fp);
   for (int i = 0; i < len_fids_record; i++) {
@@ -1392,7 +1417,12 @@ void GradientBoosting::deserializeTrees(FILE *fp) {
     fprintf(stderr,"[Warning] Command line specifies %d iterations, while the model has already been trained with %d iterations! No need to do anyting.\n",config->model_n_iterations,M);
     exit(0);
   }
-  int len_fids_record, len_fids;
+  int len_fids_record, len_fids, len_ids;
+  fread(&len_ids, sizeof(len_ids), 1, fp);
+  ids.resize(len_ids);
+  for (int i = 0; i < len_ids; i++) {
+    fread(&ids[i], sizeof(ids[i]), 1, fp);
+  }
   fread(&len_fids_record, sizeof(len_fids_record), 1, fp);
   if (len_fids_record != 0) fids_record.resize(len_fids_record);
   for (int i = 0; i < len_fids_record; i++) {

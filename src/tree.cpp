@@ -491,7 +491,8 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
       continue;
     }
     
-    if(i + 1 < n_iter){
+    // if(i + 1 < n_iter){
+    if(i < n_iter){
       if (lsz < rsz) {
         trySplit(l, -1);
         //trySplit(r, -1); is replaced by the subtraction
@@ -577,6 +578,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   this->unids = (*(std::vector<uint> *)unids_ptr);
   this->fids = fids;
   in_leaf.resize(data->Y.size());
+  fids_record = (*(std::vector<uint> *)fids);
 
   deleteIds();
 
@@ -616,14 +618,18 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     if (fabs(nodes[i].gain - -1) < 1e-4 || nodes[i].is_leaf == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
-    int splits_size = splits.size(), best_gain = nodes[i].gain, best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
+    int splits_size = splits.size(), best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
+    double best_gain = nodes[i].gain;
     std::vector<std::pair<double,int>> gains(splits_size);
 
-#pragma omp parallel for
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(guided),
+    config->use_omp == true,
     for (uint j = 0; j < splits_size; j++) {
       std::pair<double, int> tmp  = featureGain(i, splits[j].split_fi);
       gains[j] = tmp;
     }
+  )
 
     for(int j = 0; j < gains.size();++j){
       const auto& info = gains[j];
@@ -642,15 +648,15 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       while (!q.empty()) {
         uint cur_id = q.front();
         q.pop();
+        if (cur_id == -1) continue;
         nodes[cur_id].allow_build_subtree = true;
         retrain_ids.push_back(cur_id);
         int n_feats = data->data_header.n_feats, hist_size;
         for (uint j = 0; j < n_feats; ++j) {
           memset((*hist)[cur_id][j].data(), 0, sizeof(HistBin) * (*hist)[cur_id][j].size());
         }
-        if (nodes[cur_id].is_leaf == true) continue;
-        if (nodes[cur_id].left != -1) q.push(nodes[cur_id].left);
-        if (nodes[cur_id].right != -1) q.push(nodes[cur_id].right);
+        if (nodes[cur_id].is_leaf == false && nodes[cur_id].left != -1) q.push(nodes[cur_id].left);
+        if (nodes[cur_id].is_leaf == false && nodes[cur_id].right != -1) q.push(nodes[cur_id].right);
 
         if (cur_id != i) nodes[cur_id] = TreeNode();
         else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
@@ -687,7 +693,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         continue;
       }
 
-      if(i + 1 < n_iter){
+      // if(i + 1 < n_iter){
+      if(i < n_iter){
         if (lsz < rsz) {
           trySplit(l, -1);
           //trySplit(r, -1); is replaced by the subtraction
@@ -701,6 +708,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     }
   }
 
+  hist_record = *hist;
   regress();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
@@ -1009,10 +1017,14 @@ std::vector<double> Tree::predictAll(Data *data) {
 
   std::vector<double> result(n_test, 0.0);
 
-  for (int i = 0; i < nodes.size(); ++i) {
-    // split at non-leaf
+  std::queue<int> q;
+  q.push(0);
+  while (!q.empty()) {
+    int i = q.front();
+    q.pop();
     if (nodes[i].idx < 0) continue;
-    if (!nodes[i].is_leaf) split(i, nodes[i].left);
+    if (nodes[i].left != -1) q.push(nodes[i].left);
+    if (nodes[i].right != -1) q.push(nodes[i].right);
   }
 
   // instances now distributed in each leaf
@@ -1045,6 +1057,7 @@ void Tree::regress() {
   auto* H = hessian;
   auto* R = residual;
   const bool is_weighted_update = config->model_use_weighted_update;
+  leaf_ids.clear();
 
   for (int i = 0; i < nodes.size(); ++i) {
     if (nodes[i].idx >= 0 && nodes[i].is_leaf) {
