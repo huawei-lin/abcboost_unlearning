@@ -153,8 +153,8 @@ class Tree {
   // Here we force a chunk size to be large enough (4096) to dodge the data race.
   // We believe 4096 is large enough for most CPUs in 2022.
       CONDITION_OMP_PARALLEL_FOR(
-        omp parallel for schedule(static, 4096),
-        config->use_omp == true && (end - start > 4096),
+        omp parallel for schedule(static, 32768),
+        config->use_omp == true && (end - start > 32768),
         for (int i = start; i < end; ++i) {
           in_leaf[ids[i]] = val;
         }
@@ -168,8 +168,8 @@ class Tree {
   // Here we force a chunk size to be large enough (4096) to dodge the data race.
   // We believe 4096 is large enough for most CPUs in 2022.
       CONDITION_OMP_PARALLEL_FOR(
-        omp parallel for schedule(static, 4096),
-        config->use_omp == true && (end - start > 4096),
+        omp parallel for schedule(static, 32768),
+        config->use_omp == true && (end - start > 32768),
         for (int i = start; i < end; ++i) {
           in_leaf[ids[i]] = val;
         }

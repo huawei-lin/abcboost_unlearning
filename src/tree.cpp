@@ -1023,6 +1023,7 @@ std::vector<double> Tree::predictAll(Data *data) {
     int i = q.front();
     q.pop();
     if (nodes[i].idx < 0) continue;
+    if (!nodes[i].is_leaf) split(i, nodes[i].left);
     if (nodes[i].left != -1) q.push(nodes[i].left);
     if (nodes[i].right != -1) q.push(nodes[i].right);
   }
