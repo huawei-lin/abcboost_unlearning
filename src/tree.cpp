@@ -80,6 +80,7 @@ Tree::TreeNode::TreeNode() {
   allow_build_subtree = true;
   idx = left = right = parent = -1;
   gain = predict_v = -1;
+  gains.clear();
 }
 
 
@@ -600,7 +601,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].allow_build_subtree == true) continue;
-    if (!nodes[i].is_leaf) splitUnids(range, i, nodes[i].left);
+    if (nodes[i].idx < 0 || nodes[i].is_leaf == true) continue;
 
     if (i == 0) {
       unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
@@ -615,28 +616,35 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       if (lsz <= rsz) unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
       else unlearnBinSort(i - 1, i, range[i].first, range[i].second, unids);
     }
-    if (fabs(nodes[i].gain - -1) < 1e-4 || nodes[i].is_leaf == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
-    int splits_size = splits.size(), best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
-    double best_gain = nodes[i].gain;
-    std::vector<std::pair<double,int>> gains(splits_size);
-
-  CONDITION_OMP_PARALLEL_FOR(
-    omp parallel for schedule(guided),
-    config->use_omp == true,
-    for (uint j = 0; j < splits_size; j++) {
-      std::pair<double, int> tmp  = featureGain(i, splits[j].split_fi);
-      gains[j] = tmp;
+    std::vector<int> offsets(fids->size());
+    int cnt = 0, splits_size = splits.size();
+    for (int i = 1; i < splits_size; i++) {
+      if (splits[i].split_fi != splits[i - 1].split_fi) offsets[cnt++] = i;
     }
-  )
+    offsets[cnt] = splits_size;
 
-    for(int j = 0; j < gains.size();++j){
-      const auto& info = gains[j];
-      if (info.first > best_gain) {
-          best_gain = info.first;
-          best_v = info.second;
-          best_fi = splits[j].split_fi;
+    CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(static, 1),
+      config->use_omp == true,
+      for (int j = 0; j < fids->size(); j++) {
+        int gains_start = (j == 0?0:offsets[j - 1]), gains_end = offsets[j];
+        int unids_start = range[i].first, unids_end = range[i].second;
+        int fid = (data->valid_fi)[(*fids)[j]];
+
+        featureGain(i, fid, splits, gains_start, gains_end, unids, unids_start, unids_end);
+      }
+    )
+
+    int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
+    double best_gain = nodes[i].gain;
+    for (int i = 0; i < splits.size(); i++) {
+      auto &info = splits[i];
+      if (info.gain > best_gain) {
+        best_gain = info.gain;
+        best_fi = info.split_fi;
+        best_v = info.split_v;
       }
     }
 
@@ -662,6 +670,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
       }
       retrain_subtrees.emplace_back(retrain_ids);
+    } else {
+      splitUnids(range, i, nodes[i].left);
     }
   }
 
@@ -800,6 +810,194 @@ std::pair<double, double> Tree::featureGain(int x, uint fid) const{
   return std::make_pair(max_gain, best_split_v);
 }
 
+
+void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains_start, int gains_end, \
+                       std::vector<uint>& unids, int unids_start, int unids_end) { // Suppose unids is ordered
+  const auto* H = prev_hessian;
+  const auto* R = prev_residual;
+
+  int unids_len = unids_end - unids_start;
+  std::vector<hist_t> s(unids_len), w(unids_len);
+  std::vector<int> bin_ids(unids_len, -1);
+
+  if(data->auxDataWidth[fid] == 0){
+    std::vector<data_quantized_t> &fv = (data->Xv)[fid];
+    if (data->dense_f[fid]) {
+      for(uint i = unids_start;i < unids_end;++i){
+        int offset = i - unids_start;
+        int id = unids[i];
+        int bin_id = fv[id];
+        
+        bin_ids[offset] = bin_id;
+        s[offset] = R[id];
+        w[offset] = is_weighted ? H[id] : 1;
+      }
+    } else {
+      std::vector<uint> &fi = (data->Xi)[fid];
+      ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+      for (int i = unids_start; i < unids_end; i++) {
+        int offset = i - unids_start;
+        auto id = unids[i];
+
+        bin_ids[offset] = j_unobserved;
+        s[offset] = R[id];
+        w[offset] = is_weighted ? H[id] : 1;
+      }
+      for(int i = 0, j = unids_start; i < fi.size(); ++i){
+        while (fi[i] > unids[j] && j < unids_end) j++;
+        if (j >= unids_end) break;
+        if (fi[i] == unids[j]) {
+          int offset = j - unids_start;
+          auto bin_id = fv[i];
+          bin_ids[offset] = bin_id;
+        }
+      }
+    }
+  } else {
+    std::vector<uint8_t> &fv = (data->auxData)[fid];
+    if (data->dense_f[fid]) {
+      for(uint i = unids_start;i < unids_end;++i){
+        int offset = i - unids_start;
+        int id = unids[i];
+        int bin_id = (fv[id >> 1] >> ((id & 1) << 2)) & 15;
+        
+        bin_ids[offset] = bin_id;
+        s[offset] = R[id];
+        w[offset] = is_weighted ? H[id] : 1;
+      }
+    } else {
+      std::vector<uint> &fi = (data->Xi)[fid];
+      ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+      for (int i = unids_start; i < unids_end; i++) {
+        int offset = i - unids_start;
+        auto id = unids[i];
+
+        bin_ids[offset] = j_unobserved;
+        s[offset] = R[id];
+        w[offset] = is_weighted ? H[id] : 1;
+      }
+      for(int i = 0, j = unids_start; i < fi.size(); ++i){
+        while (fi[i] > unids[j] && j < unids_end) j++;
+        if (j >= unids_end) break;
+        if (fi[i] == unids[j]) {
+          int offset = j - unids_start;
+          auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
+          bin_ids[offset] = bin_id;
+        }
+      }
+    }
+  }
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(static, 1),
+    config->use_omp == true,
+    for (int i = gains_start; i < gains_end; i++) {
+      if (gains[i].gain < 0) continue;
+      int split_v = gains[i].split_v, l_s = gains[i].l_s, l_w = gains[i].l_w, r_s = gains[i].r_s, r_w = gains[i].r_w;
+      double delta_l_w = 0, delta_l_s = 0;
+      for (int i = 0; i < unids_len; i++) {
+        if (bin_ids[i] <= split_v) {
+          delta_l_w += w[i];
+          delta_l_s += s[i];
+        }
+      }
+  
+      double delta_r_w = 0, delta_r_s = 0;
+      for (int i = 0; i < unids_len; i++) {
+        if (bin_ids[i] > split_v) {
+          delta_r_w += w[i];
+          delta_r_s += s[i];
+        }
+      }
+  
+      double new_gain = -1;
+      if (l_s != delta_l_s && l_w != delta_l_w && r_s != delta_r_s && r_w != delta_r_w) {
+        new_gain = (l_s - delta_l_s)/(l_w - delta_l_w) * (l_s - delta_l_s) + (r_s - delta_r_s)/(r_w - delta_r_w) * (r_s - delta_r_s);
+        new_gain -= (l_s + r_s - delta_l_s - delta_r_s)/(l_w + r_w - delta_l_w - delta_r_w) * (l_s + r_s - delta_l_s - delta_r_s);
+      }
+      gains[i].gain = new_gain;
+    }
+  )
+}
+
+void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int start, int end) {
+  int ori_gains_len = gains.size();
+  auto &b_csw = (*hist)[x][fid];
+  hist_t total_s = .0, total_w = .0;
+  for (int i = 0; i < b_csw.size(); ++i) {
+    total_s += b_csw[i].sum;
+    total_w += b_csw[i].weight;
+  }
+
+  int l_c = 0, r_c = 0;
+  hist_t l_w = 0, l_s = 0;
+  int st = 0, ed = ((int)b_csw.size()) - 1;
+  while (
+      st <
+      b_csw.size()) {  // st = min_i (\sum_{k <= i} counts[i]) >= min_node_size
+    l_c += b_csw[st].count;
+    l_s += b_csw[st].sum;
+    l_w += b_csw[st].weight;
+    if (l_c >= config->tree_min_node_size) break;
+    ++st;
+  }
+
+  if (st == b_csw.size()) {
+    return;
+  }
+
+  do {  // ed = max_i (\sum_{k > i} counts[i]) >= min_node_size
+    r_c += b_csw[ed].count;
+    ed--;
+  } while (ed >= 0 && r_c < config->tree_min_node_size);
+
+  if (st > ed) {
+    return;
+  }
+
+  hist_t r_w = 0, r_s = 0;
+  for (int i = st, j = start; i <= ed; ++i) {
+    while(gains[j].split_v < st && j < end) j++;
+    if (j >= end) break;
+    if (i == gains[j].split_v) {
+      r_w = total_w - l_w;
+      r_s = total_s - l_s;
+
+      int split_v, offset = 1;
+      int real_i = i;
+      while (real_i >= 0  && b_csw[real_i].count == 0)
+        real_i--;
+      while (i + offset < b_csw.size() && b_csw[i + offset].count == 0)
+        offset++;
+      split_v = real_i + offset / 2;
+      double gain = l_s / l_w * l_s + r_s / r_w * r_s;
+      gains[j].gain = gain;
+      gains[j].split_v = split_v;
+      gains[j].l_s = l_s;
+      gains[j].l_w = l_w;
+      gains[j].r_s = r_s;
+      gains[j].r_w = r_w;
+      j++;
+    }
+    if (b_csw[i].count == 0) {
+      if (i + 1 < b_csw.size()) {
+        l_w += b_csw[i + 1].weight;
+        l_s += b_csw[i + 1].sum;
+      }
+      continue;
+    }
+
+    if (i + 1 < b_csw.size()) {
+      l_w += b_csw[i + 1].weight;
+      l_s += b_csw[i + 1].sum;
+    }
+  }
+
+  double delta = total_s / total_w * total_s;
+  for (int i = start; i < end; i++) {
+    gains[i].gain -= delta;
+  }
+}
+
 double Tree::featureGain(int x, uint fid, int split_v) const{
   auto &b_csw = (*hist)[x][fid];
   hist_t total_s = .0, total_w = .0;
@@ -893,6 +1091,11 @@ void Tree::init(
   this->R_tmp = R_tmp;
 }
 
+void Tree::setPrevHessianResidual(double *prev_hessian, double *prev_residual) {
+  this->prev_hessian = prev_hessian;
+  this->prev_residual = prev_residual;
+}
+
 /**
  * Load nodes for a saved tree.
  * @param[in] fileptr: Pointer to the FILE object
@@ -935,6 +1138,10 @@ void Tree::populateTree(FILE *fileptr) {
       ret += fread(&info.split_fi, sizeof(info.split_fi), 1, fileptr);
       ret += fread(&info.gain, sizeof(info.gain), 1, fileptr);
       ret += fread(&info.split_v, sizeof(info.split_v), 1, fileptr);
+      ret += fread(&info.l_s, sizeof(info.l_s), 1, fileptr);
+      ret += fread(&info.l_w, sizeof(info.l_w), 1, fileptr);
+      ret += fread(&info.r_s, sizeof(info.r_s), 1, fileptr);
+      ret += fread(&info.r_w, sizeof(info.r_w), 1, fileptr);
       node.gains[i] = info;
     }
 
@@ -1113,6 +1320,10 @@ void Tree::saveTree(FILE *fp) {
       fwrite(&node.gains[i].split_fi, sizeof(node.gains[i].split_fi), 1, fp);
       fwrite(&node.gains[i].gain, sizeof(node.gains[i].gain), 1, fp);
       fwrite(&node.gains[i].split_v, sizeof(node.gains[i].split_v), 1, fp);
+      fwrite(&node.gains[i].l_s, sizeof(node.gains[i].l_s), 1, fp);
+      fwrite(&node.gains[i].l_w, sizeof(node.gains[i].l_w), 1, fp);
+      fwrite(&node.gains[i].r_s, sizeof(node.gains[i].r_s), 1, fp);
+      fwrite(&node.gains[i].r_w, sizeof(node.gains[i].r_w), 1, fp);
     }
   }
 
@@ -1352,38 +1563,97 @@ void Tree::trySplit(int x, int sib) {
   binSort(x, sib);
 
   if ((nodes[x].end - nodes[x].start) < config->tree_min_node_size) return;
-  SplitInfo best_info;
 
-  best_info.gain = -1;
-  std::vector<std::pair<double,int>> gains(fids->size());
-  std::pair<double,int> gain_tmp;
+  std::vector<SplitInfo> gains;
+  std::vector<int> offsets(fids->size());
   nodes[x].gains.clear();
-  nodes[x].gains.resize(fids->size());
-  
+
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(guided),
     config->use_omp == true,
     for (int j = 0; j < fids->size(); ++j) {
         int fid = (data->valid_fi)[(*fids)[j]];
-        gain_tmp = featureGain(x, fid);
-        gains[j] = gain_tmp;
-        nodes[x].gains[j] = SplitInfo(fid, gain_tmp.first, gain_tmp.second);
+        int n_bins = data->data_header.n_bins_per_f[fid];
+        int offset = n_bins * config->feature_split_sample_rate;
+	if (config->feature_split_sample_rate >= 1) offset = n_bins;
+        else if (offset < 1) offset = std::min(1, n_bins);
+        offsets[j] = offset;
     }
   )
+  for (int j = 1; j < fids->size(); ++j) offsets[j] += offsets[j - 1];
+  gains.resize(*offsets.rbegin());
+
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(guided),
+    config->use_omp == true,
+    for (int j = 0; j < fids->size(); ++j) {
+      int fid = (data->valid_fi)[(*fids)[j]];
+      int n_bins = data->data_header.n_bins_per_f[fid];
+      int start = (j == 0?0:offsets[j - 1]), end = offsets[j];
+      if (end - start == n_bins) {
+        for (int i = start; i < end; i++) {
+          gains[i].split_fi = fid;
+          gains[i].split_v = i - start;
+        }
+      } else {
+        std::vector<uint> sample_results = sample(n_bins, end - start);
+        for (int i = start; i < end; i++) {
+          gains[i].split_fi = fid;
+          gains[i].split_v = sample_results[i - start];
+        }
+      }
+    }
+  )
+
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(guided),
+    config->use_omp == true,
+    for (int j = 0; j < fids->size(); ++j) {
+        int fid = (data->valid_fi)[(*fids)[j]];
+        int start = (j == 0?0:offsets[j - 1]), end = offsets[j];
+        featureGain(x, fid, gains, start, end);
+    }
+  )
+
+  SplitInfo best_info;
+  best_info.gain = -1;
+
   for(int j = 0;j < gains.size();++j){
     const auto& info = gains[j];
-    int fid = (data->valid_fi)[(*fids)[j]];
-    if (info.first > best_info.gain) {
-      best_info.gain = info.first;
-      best_info.split_fi = fid;
-      best_info.split_v = info.second;
+    if (info.gain > best_info.gain) {
+      best_info = info;
     }
   }
-
   if (best_info.gain < 0) return;
   nodes[x].gain = best_info.gain;
   nodes[x].split_fi = best_info.split_fi;
   nodes[x].split_v = best_info.split_v;
+  nodes[x].gains = gains;
+}
+
+std::vector<unsigned int> Tree::sample(int n, int n_samples) {
+
+  std::vector<unsigned int> indices(n_samples);
+  std::iota(indices.begin(), indices.end(), 0);  // set values
+  std::vector<bool> bool_indices(n, false);
+  std::fill(bool_indices.begin(), bool_indices.begin() + n_samples, true);
+  for (int i = n_samples + 1; i <= n; ++i) {
+    int gen = (rand() % (i)) + 1;  // determine if need to swap
+    if (gen <= n_samples) {
+      int swap = rand() % n_samples;
+      bool_indices[indices[swap]] = false;
+      indices[swap] = i - 1;
+      bool_indices[i - 1] = true;
+    }
+  }
+  int index = 0;
+  for (int i = 0; i < n; i++) {  // populate indices with sorted samples
+    if (bool_indices[i]) {
+      indices[index] = i;
+      ++index;
+    }
+  }
+  return indices;
 }
 
 }  // namespace ABCBoost

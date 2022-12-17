@@ -92,6 +92,7 @@ class GradientBoosting {
   void setupExperiment();
   void softmax(std::vector<double>& v);
   void updateF(int k, Tree* currTree);
+  void updateF(int k, Tree *tree, std::vector<std::vector<double>>& F);
   void zeroBins();
 
   virtual int loadModel();
@@ -176,6 +177,7 @@ class Mart : public GradientBoosting {
 
  private:
   void computeHessianResidual();
+  void computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians);
 };
 
 class ABCMart : public GradientBoosting {

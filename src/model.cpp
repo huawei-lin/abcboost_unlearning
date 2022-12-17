@@ -597,6 +597,23 @@ void GradientBoosting::updateF(int k, Tree *tree) {
   // tree->freeMemory();
 }
 
+void GradientBoosting::updateF(int k, Tree *tree, std::vector<std::vector<double>>& F) {
+  std::vector<unsigned int> &ids = tree->ids;
+  std::vector<double> &f = F[k];
+  for (auto leaf_id : tree->leaf_ids) {
+    if (leaf_id < 0) {
+      // printf("found negative leaf id\n");
+      continue;
+    }
+    const Tree::TreeNode& node = tree->nodes[leaf_id];
+    double update = config->model_shrinkage * node.predict_v;
+    unsigned int start = node.start, end = node.end;
+#pragma omp parallel for
+    for (int i = start; i < end; ++i) f[ids[i]] += update;
+  }
+  // tree->freeMemory();
+}
+
 void ABCMart::updateNormF(int k, Tree *tree) {
   std::vector<unsigned int> &ids = tree->ids;
   std::vector<double> &f = F[k];
@@ -1272,6 +1289,10 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   // set up buffers for OpenMP
   std::vector<std::vector<std::vector<unsigned int>>> buffer =
       GradientBoosting::initBuffer();
+  std::vector<std::vector<double>> prev_F(data->data_header.n_classes,
+                                     std::vector<double>(data->n_data, 0));
+  std::vector<double> prev_hessians(data->data_header.n_classes * data->n_data), \
+                      prev_residuals(data->data_header.n_classes * data->n_data);
   deleteIds(unids);
 
   // build one tree if it is binary prediction
@@ -1293,12 +1314,15 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     if (fids_record.size() != 0) fids = fids_record[m];
 
     computeHessianResidual();
+    computeHessianResidual(prev_residuals, prev_hessians);
 
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
+      updateF(k, tree, prev_F);
       tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                  &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      tree->setPrevHessianResidual(&(hessians[k * data->n_data]), &(residuals[k * data->n_data]));
       tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
       updateF(k, tree);
@@ -1330,6 +1354,24 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
  * Helper method to compute hessian and residual simultaneously.
  */
 void Mart::computeHessianResidual() {
+  std::vector<double> prob;
+#pragma omp parallel for schedule(static) private(prob)
+  for (unsigned int i = 0; i < data->n_data; ++i) {
+    prob.resize(data->data_header.n_classes);
+    int label = int(data->Y[i]);
+    for (int k = 0; k < data->data_header.n_classes; ++k) {
+      prob[k] = F[k][i];
+    }
+    softmax(prob);
+    for (int k = 0; k < data->data_header.n_classes; ++k) {
+      double p_ik = prob[k];
+      residuals[k * data->n_data + i] = (k == label) ? (1 - p_ik) : -p_ik;
+      hessians[k * data->n_data + i] = p_ik * (1 - p_ik);
+    }
+  }
+}
+
+void Mart::computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians) {
   std::vector<double> prob;
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {

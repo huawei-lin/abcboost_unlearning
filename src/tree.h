@@ -38,6 +38,7 @@ class Tree {
     uint split_fi;
     double gain;
     int split_v;
+    double l_s = -1, l_w = -1, r_s = -1, r_w = -1;
 
     SplitInfo(){
       split_fi = 0;
@@ -71,6 +72,7 @@ class Tree {
   std::vector<std::vector<uint>> *l_buffer, *r_buffer;
   std::vector<double> *feature_importance;
   double *hessian, *residual;
+  double *prev_hessian, *prev_residual;
 
   // ids stores the instance indices for each node
   std::vector<uint> ids;
@@ -107,7 +109,12 @@ class Tree {
 
   void updateFeatureImportance(int iter);
 
+  std::vector<unsigned int> sample(int n, int n_samples);
+
   std::pair<double, double> featureGain(int x, uint fid) const;
+  void featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains_start, int gains_end, \
+                       std::vector<uint>& unids, int unids_start, int unids_end);
+  void featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int start, int end);
   double featureGain(int x, uint fid, int split_v) const;
 
   void freeMemory();
@@ -124,6 +131,8 @@ class Tree {
                 uint* ids_tmp,
                 double* H_tmp,
                 double* R_tmp);
+
+  void setPrevHessianResidual(double *prev_hessian, double *prev_residual);
 
   void populateTree(const std::string line);
   void populateTree(FILE *fileptr);
@@ -153,8 +162,8 @@ class Tree {
   // Here we force a chunk size to be large enough (4096) to dodge the data race.
   // We believe 4096 is large enough for most CPUs in 2022.
       CONDITION_OMP_PARALLEL_FOR(
-        omp parallel for schedule(static, 32768),
-        config->use_omp == true && (end - start > 32768),
+        omp parallel for schedule(static, 4096),
+        config->use_omp == true && (end - start > 4096),
         for (int i = start; i < end; ++i) {
           in_leaf[ids[i]] = val;
         }
@@ -168,8 +177,8 @@ class Tree {
   // Here we force a chunk size to be large enough (4096) to dodge the data race.
   // We believe 4096 is large enough for most CPUs in 2022.
       CONDITION_OMP_PARALLEL_FOR(
-        omp parallel for schedule(static, 32768),
-        config->use_omp == true && (end - start > 32768),
+        omp parallel for schedule(static, 4096),
+        config->use_omp == true && (end - start > 4096),
         for (int i = start; i < end; ++i) {
           in_leaf[ids[i]] = val;
         }
