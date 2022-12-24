@@ -1595,15 +1595,22 @@ void Tree::trySplit(int x, int sib) {
           gains[i].split_fi = fid;
           gains[i].split_v = i - start;
         }
-      } else {
-        std::vector<uint> sample_results = sample(n_bins, end - start);
-        for (int i = start; i < end; i++) {
-          gains[i].split_fi = fid;
-          gains[i].split_v = sample_results[i - start];
-        }
       }
     }
   )
+
+  for (int j = 0; j < fids->size(); ++j) {
+    int fid = (data->valid_fi)[(*fids)[j]];
+    int n_bins = data->data_header.n_bins_per_f[fid];
+    int start = (j == 0?0:offsets[j - 1]), end = offsets[j];
+    if (end - start != n_bins) {
+      std::vector<uint> sample_results = sample(n_bins, end - start);
+      for (int i = start; i < end; i++) {
+        gains[i].split_fi = fid;
+        gains[i].split_v = sample_results[i - start];
+      }
+    }
+  }
 
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(guided),

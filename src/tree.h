@@ -94,7 +94,7 @@ class Tree {
   Config *config;
   Data *data;
 
-  std::vector<bool> in_leaf;
+  std::vector<int> in_leaf;
 
   Tree(Data *data, Config *config);
   ~Tree();
