@@ -601,21 +601,21 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].allow_build_subtree == true) continue;
-    if (nodes[i].idx < 0 || nodes[i].is_leaf == true) continue;
 
     if (i == 0) {
       unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
-    } else if (i%2 == 1) { // left
+    } else if (i%2 == 1) {
       int lsz = nodes[i].end - nodes[i].start;
       int rsz = nodes[i + 1].end - nodes[i + 1].start;
-      if (lsz <= rsz) unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
-      else unlearnBinSort(i + 1, -1, range[i].first, range[i].second, unids);
-    } else { // right
-      int lsz = nodes[i - 1].end - nodes[i - 1].start;
-      int rsz = nodes[i].end - nodes[i].start;
-      if (lsz <= rsz) unlearnBinSort(i, i - 1, range[i].first, range[i].second, unids);
-      else unlearnBinSort(i - 1, i, range[i].first, range[i].second, unids);
+      if (lsz <= rsz) {
+        unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+        unlearnBinSort(i + 1, i, range[i + 1].first, range[i + 1].second, unids);
+      } else {
+        unlearnBinSort(i + 1, -1, range[i + 1].first, range[i + 1].second, unids);
+        unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
+      }
     }
+    if (nodes[i].idx < 0 || nodes[i].is_leaf == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
     std::vector<int> offsets(fids->size());
@@ -892,7 +892,8 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
     config->use_omp == true,
     for (int i = gains_start; i < gains_end; i++) {
       if (gains[i].gain < 0) continue;
-      int split_v = gains[i].split_v, l_s = gains[i].l_s, l_w = gains[i].l_w, r_s = gains[i].r_s, r_w = gains[i].r_w;
+      int split_v = gains[i].split_v;
+      double l_s = gains[i].l_s, l_w = gains[i].l_w, r_s = gains[i].r_s, r_w = gains[i].r_w;
       double delta_l_w = 0, delta_l_s = 0;
       for (int i = 0; i < unids_len; i++) {
         if (bin_ids[i] <= split_v) {
@@ -908,11 +909,15 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
           delta_r_s += s[i];
         }
       }
-  
+
       double new_gain = -1;
       if (l_s != delta_l_s && l_w != delta_l_w && r_s != delta_r_s && r_w != delta_r_w) {
-        new_gain = (l_s - delta_l_s)/(l_w - delta_l_w) * (l_s - delta_l_s) + (r_s - delta_r_s)/(r_w - delta_r_w) * (r_s - delta_r_s);
-        new_gain -= (l_s + r_s - delta_l_s - delta_r_s)/(l_w + r_w - delta_l_w - delta_r_w) * (l_s + r_s - delta_l_s - delta_r_s);
+        double new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
+        double new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
+
+        new_gain = new_l_s/new_l_w * new_l_s + new_r_s/new_r_w * new_r_s;
+        new_gain -= (new_l_s + new_r_s)/(new_l_w + new_r_w) * (new_l_s + new_r_s);
+
       }
       gains[i].gain = new_gain;
     }
@@ -1015,8 +1020,8 @@ double Tree::featureGain(int x, uint fid, int split_v) const{
     l_c += b_csw[st].count;
     l_s += b_csw[st].sum;
     l_w += b_csw[st].weight;
-    if (l_c >= config->tree_min_node_size) break;
     ++st;
+    if (l_c >= config->tree_min_node_size) break;
   }
 
   if (st == b_csw.size() || st > split_v) {
@@ -1034,9 +1039,9 @@ double Tree::featureGain(int x, uint fid, int split_v) const{
 
   hist_t r_w = 0, r_s = 0;
   for (int i = st; i <= split_v; ++i) {
-    if (i + 1 < b_csw.size()) {
-      l_w += b_csw[i + 1].weight;
-      l_s += b_csw[i + 1].sum;
+    if (i < b_csw.size()) {
+      l_w += b_csw[i].weight;
+      l_s += b_csw[i].sum;
     }
   }
   r_w = total_w - l_w;
