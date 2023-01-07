@@ -1232,7 +1232,8 @@ void Mart::train() {
       GradientBoosting::initBuffer();
 
   // build one tree if it is binary prediction
-  int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+  // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+  int K = data->data_header.n_classes;
 
   Utils::Timer t1, t2, t3;
   t1.restart();
@@ -1262,20 +1263,20 @@ void Mart::train() {
       updateF(k, tree);
       additive_trees[m][k] = std::unique_ptr<Tree>(tree);
     }
-    if (data->data_header.n_classes == 2) {
-#pragma omp parallel for
-      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
-    }
+//    if (data->data_header.n_classes == 2) {
+//#pragma omp parallel for
+//      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
+//    }
 
     double loss = getLoss();
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
-    if(loss < config->stop_tolerance){
-      config->model_n_iterations = m + 1;
-      break;
-    }
+//     if(loss < config->stop_tolerance){
+//       config->model_n_iterations = m + 1;
+//       break;
+//     }
   }
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
@@ -1296,7 +1297,8 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   deleteIds(unids);
 
   // build one tree if it is binary prediction
-  int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+  // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+  int K = data->data_header.n_classes;
 
   Utils::Timer t1, t2, t3;
   t1.restart();
@@ -1327,20 +1329,20 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       tree->updateFeatureImportance(m);
       updateF(k, tree);
     }
-    if (data->data_header.n_classes == 2) {
-#pragma omp parallel for
-      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
-    }
+//    if (data->data_header.n_classes == 2) {
+//#pragma omp parallel for
+//      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
+//    }
 
     double loss = getLoss();
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
-    if(loss < config->stop_tolerance){
-      config->model_n_iterations = m + 1;
-      break;
-    }
+//     if(loss < config->stop_tolerance){
+//       config->model_n_iterations = m + 1;
+//       break;
+//     }
   }
   printf("Training has taken %.5f seconds\n", t2.get_time());
 

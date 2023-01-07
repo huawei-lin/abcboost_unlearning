@@ -63,22 +63,26 @@ int main(int argc, char* argv[]) {
       model = std::unique_ptr<ABCBoost::GradientBoosting>(
           new ABCBoost::MartGPU(data.get(), config.get()));
     }else{
-      if(data->data_header.n_classes == 2){
-        model = std::unique_ptr<ABCBoost::GradientBoosting>(
-            new ABCBoost::BinaryMart(data.get(), config.get()));
-      }else{
-        model = std::unique_ptr<ABCBoost::GradientBoosting>(
-            new ABCBoost::Mart(data.get(), config.get()));
-      }
-    }
-#else
-    if(data->data_header.n_classes == 2){
-      model = std::unique_ptr<ABCBoost::GradientBoosting>(
-          new ABCBoost::BinaryMart(data.get(), config.get()));
-    }else{
+//      if(data->data_header.n_classes == 2){
+//        model = std::unique_ptr<ABCBoost::GradientBoosting>(
+//            new ABCBoost::BinaryMart(data.get(), config.get()));
+//      }else{
+//        model = std::unique_ptr<ABCBoost::GradientBoosting>(
+//            new ABCBoost::Mart(data.get(), config.get()));
+//      }
       model = std::unique_ptr<ABCBoost::GradientBoosting>(
           new ABCBoost::Mart(data.get(), config.get()));
     }
+#else
+ //   if(data->data_header.n_classes == 2){
+ //     model = std::unique_ptr<ABCBoost::GradientBoosting>(
+ //         new ABCBoost::BinaryMart(data.get(), config.get()));
+ //   }else{
+ //     model = std::unique_ptr<ABCBoost::GradientBoosting>(
+ //         new ABCBoost::Mart(data.get(), config.get()));
+ //   }
+    model = std::unique_ptr<ABCBoost::GradientBoosting>(
+        new ABCBoost::Mart(data.get(), config.get()));
 #endif
   } else if (config->model_name == "abcmart" ||
              config->model_name == "abcrobustlogit") {
