@@ -58,6 +58,7 @@ class Config {
   double tree_damping_factor = 1e-100;
   int tree_max_n_leaves = 20;
   int tree_min_node_size = 10;
+  int tree_n_random_layers = 0;
   double feature_split_sample_rate = 1;
 
   // Model config
@@ -484,6 +485,8 @@ class Config {
         tree_fast_bin_sort = stob(value);
       } else if (key == "feature_split_sample_rate") {
         feature_split_sample_rate = stod(value);
+      } else if (key == "tree_n_random_layers") {
+        tree_n_random_layers = stod(value);
       } else
           // model related
           if (key == "model_n_iterations" || key == "iter") {

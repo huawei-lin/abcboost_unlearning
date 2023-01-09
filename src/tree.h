@@ -52,10 +52,11 @@ class Tree {
    public:
     bool is_leaf;
     bool allow_build_subtree;
+    bool is_random_node;
     short idx, left, right, parent;
     int start, end;
     // below are prediction related
-    uint split_fi;
+    int split_fi;
     double gain, predict_v;
     int split_v;
     std::vector<SplitInfo> gains;
@@ -149,6 +150,9 @@ class Tree {
   void split(int x, int l);
 
   void trySplit(int x, int sib);
+
+  std::pair<int, int> getValidRange(int x, uint fid);
+  std::pair<int, int> generateFidV(int x);
 
   inline void alignHessianResidual(const uint start, const uint end);
   inline void alignHessianResidual(const uint start, const uint end, std::vector<uint>& ids);

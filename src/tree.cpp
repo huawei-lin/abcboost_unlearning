@@ -78,7 +78,10 @@ Tree::~Tree() {
 Tree::TreeNode::TreeNode() {
   is_leaf = true;
   allow_build_subtree = true;
+  is_random_node = false;
+  start = end = -1;
   idx = left = right = parent = -1;
+  split_fi = split_v = -1;
   gain = predict_v = -1;
   gains.clear();
 }
@@ -461,47 +464,85 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
   nodes[0].idx = 0;
   nodes[0].start = 0;
   nodes[0].end = ids->size();
-  trySplit(0, -1);
 
   int l, r;
-  uint lsz, rsz, msz = config->tree_min_node_size;
+  uint lsz, rsz, msz = config->tree_min_node_size, nrl = config->tree_n_random_layers;
 
   const int n_iter = n_leaves - 1;
   for (int i = 0; i < n_iter; ++i) {
-    // find the node with max gain to split (calculated in trySplit)
-    int idx = -1;
-    double max_gain = -1;
-    for (int j = 0; j < 2 * i + 1; ++j) {
-      if (nodes[j].is_leaf && nodes[j].allow_build_subtree && nodes[j].gain > max_gain) {
-        idx = j;
-        max_gain = nodes[j].gain;
-      }
-    }
-    l = 2 * i + 1;
-    r = l + 1;
-    if (idx == -1) {
-      fprintf(stderr, "[INFO] cannot split further.\n");
-      break;
-    }
-    split(idx, l);
-    lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
+    if (nrl == 0) trySplit(0, -1);
+    if (i < Utils::ipow(2, nrl) - 1) {
+      if (i == 0) binSort(i, -1);
+      std::pair<int, int> fid_v = generateFidV(i);
+      nodes[i].split_fi = fid_v.first;
+      nodes[i].split_v = fid_v.second;
+      nodes[i].is_random_node = true;
 
-    if (lsz < msz && rsz < msz) {
-      fprintf(stderr,
-              "[WARNING] Split is cancelled because of min node size!\n");
-      continue;
-    }
-    
-    // if(i + 1 < n_iter){
-    if(i < n_iter){
-      if (lsz < rsz) {
-        trySplit(l, -1);
-        //trySplit(r, -1); is replaced by the subtraction
-        trySplit(r, l);
+      if (fid_v.first == -1) continue;
+
+      l = 2 * i + 1;
+      r = l + 1;
+
+      split(i, l);
+
+      if (i >= Utils::ipow(2, nrl - 1) - 1) {
+        if (lsz < rsz) {
+          trySplit(l, -1);
+          //trySplit(r, -1); is replaced by the subtraction
+          trySplit(r, l);
+        } else {
+          trySplit(r, -1);
+          //trySplit(l, -1);
+          trySplit(l, r);
+        }
       } else {
-        trySplit(r, -1);
-        //trySplit(l, -1);
-        trySplit(l, r);
+        if (lsz < rsz) {
+          binSort(l, -1);
+          binSort(r, l);
+        } else {
+          binSort(r, -1);
+          binSort(l, r);
+        }
+      }
+
+    } else {
+      // find the node with max gain to split (calculated in trySplit)
+      int idx = -1;
+      double max_gain = -1;
+      for (int j = 0; j < 2 * i + 1; ++j) {
+        if (nodes[j].is_leaf && nodes[j].allow_build_subtree && nodes[j].gain > max_gain) {
+          idx = j;
+          max_gain = nodes[j].gain;
+        }
+      }
+
+      l = 2 * i + 1;
+      r = l + 1;
+
+      if (idx == -1) {
+        fprintf(stderr, "[INFO] cannot split further.\n");
+        break;
+      }
+      split(idx, l);
+      lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
+
+      if (lsz < msz && rsz < msz) {
+        fprintf(stderr,
+                "[WARNING] Split is cancelled because of min node size!\n");
+        continue;
+      }
+
+      // if(i + 1 < n_iter){
+      if(i < n_iter){
+        if (lsz < rsz) {
+          trySplit(l, -1);
+          //trySplit(r, -1); is replaced by the subtraction
+          trySplit(r, l);
+        } else {
+          trySplit(r, -1);
+          //trySplit(l, -1);
+          trySplit(l, r);
+        }
       }
     }
   }
@@ -516,7 +557,13 @@ void Tree::deleteIds() {
 
   std::map<int, std::vector<int*>> split_ptr;
   std::vector<uint> split_ids;
-  int split_num = n_leaves + 1;
+
+  int leaf_num = 0;
+  for (auto node : nodes) {
+    if (node.idx != -1 && node.is_leaf == true) leaf_num++;
+  }
+
+  int split_num = leaf_num + 1;
   split_ids.reserve(split_num);
 
   for (int i = 0; i < nodes.size(); i++) {
@@ -600,7 +647,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
-    if (nodes[i].allow_build_subtree == true) continue;
+    auto& node = nodes[i];
+    if (nodes[i].allow_build_subtree == true || nodes[i].idx < 0) continue;
 
     if (i == 0) {
       unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
@@ -615,7 +663,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
       }
     }
-    if (nodes[i].idx < 0 || nodes[i].is_leaf == true) continue;
+    if (nodes[i].is_leaf == true || nodes[i].is_random_node == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
     std::vector<int> offsets(fids->size());
@@ -1134,6 +1182,7 @@ void Tree::populateTree(FILE *fileptr) {
     ret += fread(&node.split_v, sizeof(node.split_v), 1, fileptr);
     ret += fread(&node.gain, sizeof(node.gain), 1, fileptr);
     ret += fread(&node.predict_v, sizeof(node.predict_v), 1, fileptr);
+    ret += fread(&node.is_random_node, sizeof(node.is_random_node), 1, fileptr);
 
     int gains_num = 0;
     ret += fread(&gains_num, sizeof(gains_num), 1, fileptr);
@@ -1318,6 +1367,7 @@ void Tree::saveTree(FILE *fp) {
     fwrite(&node.split_v, sizeof(node.split_v), 1, fp);
     fwrite(&node.gain, sizeof(node.gain), 1, fp);
     fwrite(&node.predict_v, sizeof(node.predict_v), 1, fp);
+    fwrite(&node.is_random_node, sizeof(node.is_random_node), 1, fp);
 
     int gains_num = node.gains.size();
     fwrite(&gains_num, sizeof(gains_num), 1, fp);
@@ -1666,6 +1716,58 @@ std::vector<unsigned int> Tree::sample(int n, int n_samples) {
     }
   }
   return indices;
+}
+
+std::pair<int, int> Tree::getValidRange(int x, uint fid) {
+  auto &b_csw = (*hist)[x][fid];
+
+  int l_c = 0, r_c = 0;
+  int st = 0, ed = ((int)b_csw.size()) - 1;
+  while (
+      st <
+      b_csw.size()) {  // st = min_i (\sum_{k <= i} counts[i]) >= min_node_size
+    l_c += b_csw[st].count;
+    if (l_c >= config->tree_min_node_size) break;
+    ++st;
+  }
+
+  if (st == b_csw.size()) {
+    return std::make_pair(-1, -1);
+  }
+
+  do {  // ed = max_i (\sum_{k > i} counts[i]) >= min_node_size
+    r_c += b_csw[ed].count;
+    ed--;
+  } while (ed >= 0 && r_c < config->tree_min_node_size);
+
+  if (st > ed) {
+    return std::make_pair(-1, -1);
+  }
+
+  return std::make_pair(st, ed);
+}
+
+std::pair<int, int> Tree::generateFidV(int x) {
+  std::vector<std::pair<int, std::pair<int, int>>> valid_ranges;
+
+  std::pair<int, int> range;
+  for (int j = 0; j < fids->size(); ++j) {
+    int fid = (data->valid_fi)[(*fids)[j]];
+    range = getValidRange(x, fid);
+    if (range.first == -1) continue;
+    valid_ranges.emplace_back(std::make_pair(fid, range));
+  }
+
+  if (valid_ranges.size() == 0) {
+    return std::make_pair(-1, -1);
+  }
+
+  int random_id = sample(valid_ranges.size(), 1)[0];
+  int random_fid = valid_ranges[random_id].first;
+  int st = valid_ranges[random_id].second.first;
+  int ed = valid_ranges[random_id].second.second;
+  int random_v = sample(ed - st + 1, 1)[0] + st;
+  return std::make_pair(random_fid, random_v);
 }
 
 }  // namespace ABCBoost

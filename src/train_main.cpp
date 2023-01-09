@@ -38,6 +38,10 @@ int main(int argc, char* argv[]) {
     config->model_mode = "train";
     start_epoch = model_header.config.model_n_iterations;
   }
+  if (config->tree_max_n_leaves <= ABCBoost::Utils::ipow(2, config->tree_n_random_layers)) {
+    fprintf(stderr, "Please set a larger tree_max_n_leaves greater than 2^${tree_n_random_layers}\n");
+    exit(1);
+  }
 
   config->sanityCheck();
 
