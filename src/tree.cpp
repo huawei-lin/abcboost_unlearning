@@ -470,7 +470,7 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
 
   const int n_iter = n_leaves - 1;
   for (int i = 0; i < n_iter; ++i) {
-    if (nrl == 0) trySplit(0, -1);
+    if (nrl == 0 && i == 0) trySplit(0, -1);
     if (i < Utils::ipow(2, nrl) - 1) {
       if (i == 0) binSort(i, -1);
       std::pair<int, int> fid_v = generateFidV(i);
@@ -650,7 +650,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     auto& node = nodes[i];
     if (nodes[i].allow_build_subtree == true || nodes[i].idx < 0) continue;
 
-    if (i == 0) {
+    if (i == 0 || nodes[nodes[i].parent].is_random_node == true) {
       unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
     } else if (i%2 == 1) {
       int lsz = nodes[i].end - nodes[i].start;
@@ -663,7 +663,11 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
       }
     }
-    if (nodes[i].is_leaf == true || nodes[i].is_random_node == true) continue;
+    if (nodes[i].is_leaf == true) continue;
+    if (nodes[i].is_random_node == true) {
+      splitUnids(range, i, nodes[i].left);
+      continue;
+    }
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
     std::vector<int> offsets(fids->size());
