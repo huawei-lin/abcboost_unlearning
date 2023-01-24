@@ -156,6 +156,7 @@ class Tree {
 
   inline void alignHessianResidual(const uint start, const uint end);
   inline void alignHessianResidual(const uint start, const uint end, std::vector<uint>& ids);
+  inline void alignHessianResidual(const uint start, const uint end, double* hessian, double* residual, std::vector<uint>& ids);
   inline void initUnobserved(const uint start,const uint end,int& c_unobserved, double& r_unobserved, double& h_unobserved);
   inline void initUnobserved(const uint start,const uint end,int &c_unobserved, double& r_unobserved, double& h_unobserved, std::vector<uint>& ids);
 

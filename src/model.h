@@ -177,7 +177,7 @@ class Mart : public GradientBoosting {
 
  private:
   void computeHessianResidual();
-  void computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians);
+  void computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians, std::vector<std::vector<double>>& F, std::vector<uint>& ids);
 };
 
 class ABCMart : public GradientBoosting {

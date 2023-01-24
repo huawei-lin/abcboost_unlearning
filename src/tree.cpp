@@ -115,6 +115,20 @@ inline void Tree::alignHessianResidual(const uint start,const uint end, std::vec
   )
 }
 
+inline void Tree::alignHessianResidual(const uint start,const uint end, double* hessian, double* residual, std::vector<uint>& ids){
+  const auto* H = hessian;
+  const auto* R = residual;
+  CONDITION_OMP_PARALLEL_FOR(
+    omp parallel for schedule(static),
+    config->use_omp == 1 && end - start > 1024,
+    for(uint i = start;i < end;++i){
+      auto id = ids[i];
+      H_tmp[i] = H[id];
+      R_tmp[i] = R[id];
+    }
+  )
+}
+
 
 inline void Tree::initUnobserved(const uint start,const uint end,int &c_unobserved, double& r_unobserved, double& h_unobserved){
   const auto* H = hessian;
@@ -302,13 +316,13 @@ void Tree::binSort(int x, int sib) {
 }
 
 void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids) {
-  const auto* H = hessian;
-  const auto* R = residual;
+  const auto* H = prev_hessian;
+  const auto* R = prev_residual;
   uint fsz = fids->size();
 
   if (sib == -1) {
     if(!(start == 0 && end == data->n_data)){
-      alignHessianResidual(start,end,ids);
+      alignHessianResidual(start,end, prev_hessian, prev_residual, ids);
     }
 
     double r_unobserved = 0.0;
@@ -520,15 +534,15 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
       r = l + 1;
 
       if (idx == -1) {
-        fprintf(stderr, "[INFO] cannot split further.\n");
+//         fprintf(stderr, "[INFO] cannot split further.\n");
         break;
       }
       split(idx, l);
       lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
 
       if (lsz < msz && rsz < msz) {
-        fprintf(stderr,
-                "[WARNING] Split is cancelled because of min node size!\n");
+//         fprintf(stderr,
+//                 "[WARNING] Split is cancelled because of min node size!\n");
         continue;
       }
 
@@ -744,14 +758,14 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       l = retrain_ids[i];
       r = retrain_ids[i + 1];
       if (idx == -1) {
-        fprintf(stderr, "[INFO] cannot split further.\n");
+//        fprintf(stderr, "[INFO] cannot split further.\n");
         break;
       }
       split(idx, l);
       lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
       if (lsz < msz && rsz < msz) {
-        fprintf(stderr,
-                "[WARNING] Split is cancelled because of min node size!\n");
+//         fprintf(stderr,
+//                 "[WARNING] Split is cancelled because of min node size!\n");
         continue;
       }
 

@@ -1294,6 +1294,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
                                      std::vector<double>(data->n_data, 0));
   std::vector<double> prev_hessians(data->data_header.n_classes * data->n_data), \
                       prev_residuals(data->data_header.n_classes * data->n_data);
+
   deleteIds(unids);
 
   // build one tree if it is binary prediction
@@ -1316,7 +1317,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     if (fids_record.size() != 0) fids = fids_record[m];
 
     computeHessianResidual();
-    computeHessianResidual(prev_residuals, prev_hessians);
+    computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
 
     for (int k = 0; k < K; ++k) {
 
@@ -1324,7 +1325,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       updateF(k, tree, prev_F);
       tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                  &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
-      tree->setPrevHessianResidual(&(hessians[k * data->n_data]), &(residuals[k * data->n_data]));
+      tree->setPrevHessianResidual(&(prev_hessians[k * data->n_data]), &(prev_residuals[k * data->n_data]));
       tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
       updateF(k, tree);
@@ -1373,10 +1374,12 @@ void Mart::computeHessianResidual() {
   }
 }
 
-void Mart::computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians) {
+void Mart::computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians, std::vector<std::vector<double>>& F, std::vector<uint>& ids) {
   std::vector<double> prob;
+  int n_ids = ids.size();
 #pragma omp parallel for schedule(static) private(prob)
-  for (unsigned int i = 0; i < data->n_data; ++i) {
+  for (unsigned int j = 0; j < n_ids; ++j) {
+    int i = ids[j];
     prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
