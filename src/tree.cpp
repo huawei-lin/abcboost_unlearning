@@ -635,7 +635,8 @@ void Tree::deleteIds() {
 }
 
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<uint> *unids_ptr) {
+                       std::vector<uint> *unids_ptr, int &retrain_node_cnt, double &unlearn_binsort_time,
+                       double &split_unids_time, double &update_gains_time, double &get_retrain_ids_time, double &retrain_time) {
 
   this->unids = (*(std::vector<uint> *)unids_ptr);
   this->fids = fids;
@@ -654,6 +655,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       sparse_fids.push_back(fid);
   }
 
+  Utils::Timer t1;
+
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
   std::vector<std::pair<uint, uint>> range(n_nodes, std::make_pair(0, 0));
@@ -664,6 +667,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     auto& node = nodes[i];
     if (nodes[i].allow_build_subtree == true || nodes[i].idx < 0) continue;
 
+    t1.restart();
     if (i == 0 || nodes[nodes[i].parent].is_random_node == true) {
       unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
     } else if (i%2 == 1) {
@@ -677,11 +681,13 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
       }
     }
+    unlearn_binsort_time += t1.get_time_restart();
     if (nodes[i].is_leaf == true) continue;
     if (nodes[i].is_random_node == true) {
       splitUnids(range, i, nodes[i].left);
       continue;
     }
+    split_unids_time += t1.get_time_restart();
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
     std::vector<int> offsets(fids->size());
@@ -713,6 +719,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         best_v = info.split_v;
       }
     }
+    update_gains_time += t1.get_time_restart();
 
     if (!(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
       std::vector<uint> retrain_ids;
@@ -736,6 +743,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
       }
       retrain_subtrees.emplace_back(retrain_ids);
+      get_retrain_ids_time += t1.get_time_restart();
     } else {
       splitUnids(range, i, nodes[i].left);
     }
@@ -743,8 +751,10 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   uint lsz, rsz, msz = config->tree_min_node_size;
   int l, r;
+  t1.restart();
   for (std::vector<uint> &retrain_ids : retrain_subtrees) {
     int root = retrain_ids[0], n_iter = retrain_ids.size();
+    retrain_node_cnt += n_iter;
     trySplit(root, -1);
     for (int i = 1; i < n_iter; i += 2) {
       int idx = -1;
@@ -783,6 +793,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
   }
+  retrain_time += t1.get_time_restart();
 
   hist_record = *hist;
   regress();

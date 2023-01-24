@@ -105,8 +105,9 @@ class Tree {
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void deleteIds();
-  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
-                   std::vector<uint> *unids_ptr);
+  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
+                       std::vector<uint> *unids_ptr, int &retrain_node_cnt, double &unlearn_binsort_time,
+                       double &split_unids_time, double &update_gains_time, double &get_retrain_ids_time, double &retrain_time);
 
   void updateFeatureImportance(int iter);
 
