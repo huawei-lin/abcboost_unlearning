@@ -581,6 +581,7 @@ void Tree::deleteIds() {
   split_ids.reserve(split_num);
 
   for (int i = 0; i < nodes.size(); i++) {
+    if (nodes[i].start == -1 || nodes[i].end == -1) continue;
     split_ptr[nodes[i].start].push_back(&nodes[i].start);
     split_ptr[nodes[i].end].push_back(&nodes[i].end);
   }
