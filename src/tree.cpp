@@ -1424,6 +1424,7 @@ void Tree::saveTree(FILE *fp) {
 }
 
 void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
+  if (l < 0) return;
   uint pstart = range[x].first;
   uint pend = range[x].second;
   uint n_ids = pend - pstart;
