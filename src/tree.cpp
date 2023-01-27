@@ -683,7 +683,6 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
     unlearn_binsort_time += t1.get_time_restart();
-    if (nodes[i].is_leaf == true) continue;
     if (nodes[i].is_random_node == true) {
       splitUnids(range, i, nodes[i].left);
       continue;
@@ -711,16 +710,18 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     )
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
-    double best_gain = nodes[i].gain;
-    for (int i = 0; i < splits.size(); i++) {
-      auto &info = splits[i];
+    double best_gain = -1;
+    for (int j = 0; j < splits.size(); j++) {
+      auto &info = nodes[i].gains[j];
       if (info.gain > best_gain) {
         best_gain = info.gain;
         best_fi = info.split_fi;
         best_v = info.split_v;
       }
+      nodes[i].gain = best_gain;
     }
     update_gains_time += t1.get_time_restart();
+    if (nodes[i].is_leaf == true) continue;
 
     if (!(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
       std::vector<uint> retrain_ids;
@@ -965,6 +966,7 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
       }
     }
   }
+
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(static, 1),
     config->use_omp == true,
@@ -989,13 +991,17 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
       }
 
       double new_gain = -1;
-      if (l_s != delta_l_s && l_w != delta_l_w && r_s != delta_r_s && r_w != delta_r_w) {
+      if (l_w != delta_l_w && r_w != delta_r_w) {
         double new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
         double new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
 
         new_gain = new_l_s/new_l_w * new_l_s + new_r_s/new_r_w * new_r_s;
         new_gain -= (new_l_s + new_r_s)/(new_l_w + new_r_w) * (new_l_s + new_r_s);
 
+        gains[i].l_s = new_l_s;
+        gains[i].l_w = new_l_w;
+        gains[i].r_s = new_r_s;
+        gains[i].r_w = new_r_w;
       }
       gains[i].gain = new_gain;
     }
@@ -1003,7 +1009,6 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
 }
 
 void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int start, int end) {
-  int ori_gains_len = gains.size();
   auto &b_csw = (*hist)[x][fid];
   hist_t total_s = .0, total_w = .0;
   for (int i = 0; i < b_csw.size(); ++i) {
@@ -1045,28 +1050,13 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int start
       r_w = total_w - l_w;
       r_s = total_s - l_s;
 
-      int split_v, offset = 1;
-      int real_i = i;
-      while (real_i >= 0  && b_csw[real_i].count == 0)
-        real_i--;
-      while (i + offset < b_csw.size() && b_csw[i + offset].count == 0)
-        offset++;
-      split_v = real_i + offset / 2;
       double gain = l_s / l_w * l_s + r_s / r_w * r_s;
       gains[j].gain = gain;
-      gains[j].split_v = split_v;
       gains[j].l_s = l_s;
       gains[j].l_w = l_w;
       gains[j].r_s = r_s;
       gains[j].r_w = r_w;
       j++;
-    }
-    if (b_csw[i].count == 0) {
-      if (i + 1 < b_csw.size()) {
-        l_w += b_csw[i + 1].weight;
-        l_s += b_csw[i + 1].sum;
-      }
-      continue;
     }
 
     if (i + 1 < b_csw.size()) {
@@ -1660,7 +1650,7 @@ void Tree::trySplit(int x, int sib) {
         int fid = (data->valid_fi)[(*fids)[j]];
         int n_bins = data->data_header.n_bins_per_f[fid];
         int offset = n_bins * config->feature_split_sample_rate;
-	if (config->feature_split_sample_rate >= 1) offset = n_bins;
+	if (config->feature_split_sample_rate >= 1 - 1e-5) offset = n_bins;
         else if (offset < 1) offset = std::min(1, n_bins);
         offsets[j] = offset;
     }
@@ -1716,6 +1706,7 @@ void Tree::trySplit(int x, int sib) {
       best_info = info;
     }
   }
+
   if (best_info.gain < 0) return;
   nodes[x].gain = best_info.gain;
   nodes[x].split_fi = best_info.split_fi;

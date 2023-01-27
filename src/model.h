@@ -57,6 +57,7 @@ class GradientBoosting {
   std::vector<std::vector<std::unique_ptr<Tree>>> additive_trees;
   std::vector<std::vector<double>> F;//, hessians, residuals;
 	std::vector<double> hessians,residuals;
+  std::vector<std::vector<double>> hessians_record, residuals_record;
   std::vector<double> feature_importance;
   std::vector<unsigned int> ids, fids;
   std::vector<std::vector<unsigned int>> fids_record;
