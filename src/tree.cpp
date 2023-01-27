@@ -684,7 +684,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     }
     unlearn_binsort_time += t1.get_time_restart();
     if (nodes[i].is_random_node == true) {
-      splitUnids(range, i, nodes[i].left);
+      if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
       continue;
     }
     split_unids_time += t1.get_time_restart();
@@ -1424,7 +1424,6 @@ void Tree::saveTree(FILE *fp) {
 }
 
 void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
-  if (l < 0) return;
   uint pstart = range[x].first;
   uint pend = range[x].second;
   uint n_ids = pend - pstart;
