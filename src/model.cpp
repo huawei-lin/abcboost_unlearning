@@ -119,8 +119,10 @@ void GradientBoosting::print_test_message(int iter,double iter_time,int& low_err
 
 void GradientBoosting::print_train_message(int iter,double loss,double iter_time){
   int err = getError();
-  printf("%4d | loss: %20.14e | errors: %7d | time: %.5f\n", iter,
-       loss, err, iter_time);
+//   printf("%4d | loss: %20.14e | errors: %7d | time: %.5f\n", iter,
+//        loss, err, iter_time);
+  printf("%4d | loss: %20.14e | errors: %7d | time: %.5f | retrain_node_cnt: %d | unlearn_binsort_time: %.5f | split_unids_time: %.5f | update_gains_time: %.5f | get_retrain_ids_time: %.5f | retrain_time: %.5f | compute_HR_time: %.5f | updateF_1_time: %.5f | init_set_HR_time: %.5f | unlearnTree_time: %.5f | update_FI_time: %.5f | update_F_2_time: %.5f | get_loss_time: %.5f\n", iter,
+       loss, err, iter_time, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 #ifdef USE_R_CMD
   R_FlushConsole();
 #endif
