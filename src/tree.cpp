@@ -316,6 +316,7 @@ void Tree::binSort(int x, int sib) {
 }
 
 void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids) {
+  if (end - start <= 0) return;
   const auto* H = prev_hessian;
   const auto* R = prev_residual;
   uint fsz = fids->size();
@@ -672,10 +673,18 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       int rsz = nodes[i + 1].end - nodes[i + 1].start;
       if (lsz <= rsz) {
         unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
-        unlearnBinSort(i + 1, i, range[i + 1].first, range[i + 1].second, unids);
+        if (range[i + 1].second - range[i + 1].first < config->data_max_n_bins) {
+          unlearnBinSort(i + 1, -1, range[i + 1].first, range[i + 1].second, unids);
+        } else {
+          unlearnBinSort(i + 1, i, range[i + 1].first, range[i + 1].second, unids);
+        }
       } else {
         unlearnBinSort(i + 1, -1, range[i + 1].first, range[i + 1].second, unids);
-        unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
+        if (range[i].second - range[i].first < config->data_max_n_bins) {
+          unlearnBinSort(i, -1, range[i].first, range[i].second, unids);
+        } else {
+          unlearnBinSort(i, i + 1, range[i].first, range[i].second, unids);
+        }
       }
     }
     if (nodes[i].is_random_node == true) {
@@ -881,6 +890,7 @@ std::pair<double, double> Tree::featureGain(int x, uint fid) const{
 
 void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains_start, int gains_end, \
                        std::vector<uint>& unids, int unids_start, int unids_end) { // Suppose unids is ordered
+  if (unids_end - unids_start <= 0) return;
   const auto* H = prev_hessian;
   const auto* R = prev_residual;
 
