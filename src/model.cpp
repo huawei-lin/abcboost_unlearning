@@ -132,8 +132,8 @@ void GradientBoosting::print_train_message(int iter,double loss,double iter_time
 
 void GradientBoosting::print_unlearn_message(int iter,double loss,double iter_time, int retrain_node_cnt, std::vector<double>& time_records, std::vector<double>& time_records_2){
   int err = getError();
-  printf("%4d | loss: %20.14e | errors: %7d | time: %.5f | retrain_node_cnt: %d | unlearn_binsort_time: %.5f | split_unids_time: %.5f | update_gains_time: %.5f | get_retrain_ids_time: %.5f | retrain_time: %.5f | delete_unids_time: %.5f | prepare_fid_time: %.5f | unlearn_setting_time: %.5f | finalize_time: %.5f | compute_HR_time: %.5f | updateF_1_time: %.5f | init_set_HR_time: %.5f | unlearnTree_time: %.5f | update_FI_time: %.5f | update_F_2_time: %.5f | get_loss_time: %.5f\n", iter,
-       loss, err, iter_time, retrain_node_cnt, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], time_records[6], time_records[7], time_records[8], time_records_2[0], time_records_2[1], time_records_2[2], time_records_2[3], time_records_2[4], time_records_2[5], time_records_2[6]);
+  printf("%4d | loss: %20.14e | errors: %7d | time: %.5f | retrain_node_cnt: %d | unlearn_binsort_time: %.5f | split_unids_time: %.5f | update_gains_time: %.5f | get_retrain_ids_time: %.5f | retrain_time: %.5f | delete_unids_time: %.5f | prepare_fid_time: %.5f | unlearn_setting_time: %.5f | finalize_time: %.5f | compute_HR_time: %.5f | updateF_1_time: %.5f | init_set_HR_time: %.5f | unlearnTree_time: %.5f | update_FI_time: %.5f | update_F_2_time: %.5f | get_loss_time: %.5f | get_split_ptr_time: %.5f | id_global_time: %.5f | merge_id_global_time: %.5f | change_split_time: %.5f | real_delete_id_time: %.5f\n", iter,
+       loss, err, iter_time, retrain_node_cnt, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], time_records[6], time_records[7], time_records[8], time_records_2[0], time_records_2[1], time_records_2[2], time_records_2[3], time_records_2[4], time_records_2[5], time_records_2[6], time_records[9], time_records[10], time_records[11], time_records[12], time_records[13]);
 #ifdef USE_R_CMD
   R_FlushConsole();
 #endif
@@ -599,6 +599,9 @@ void GradientBoosting::updateF(int k, Tree *tree) {
   for (auto leaf_id : tree->leaf_ids) {
     if (leaf_id < 0) {
       // printf("found negative leaf id\n");
+      continue;
+    }
+    if (tree->range.size() > 0 && tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
       continue;
     }
     const Tree::TreeNode& node = tree->nodes[leaf_id];
@@ -1283,7 +1286,8 @@ void Mart::train() {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
@@ -1314,7 +1318,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   t1.restart();
   t2.restart();
   t3.restart();
-  t4.restart();
 
   deleteIds(unids);
 
@@ -1342,25 +1345,36 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     if (fids_record.size() != 0) fids = fids_record[m];
 
     t1.restart();
+    t4.restart();
+    bool recomputeRH = false;
     if (residuals_record.size() == 0 || m >= config->model_n_iterations*0.9) {
       computeHessianResidual();
-    } else {
-      residuals = residuals_record[m];
-      hessians = hessians_record[m];
+      recomputeRH = true;
     }
-    computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
+//     } else {
+//       recomputeRH = false;
+// //       residuals = residuals_record[m];
+// //       hessians = hessians_record[m];
+//     }
+    // computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
     compute_HR_time += t4.get_time_restart();
 
     int retrain_node_cnt = 0;
-    std::vector<double> time_records(9, 0);
+    std::vector<double> time_records(14, 0);
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
-      updateF(k, tree, prev_F);
+      // updateF(k, tree, prev_F);
       updateF_1_time += t4.get_time_restart();
-      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
-                 &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
-      tree->setPrevHessianResidual(&(prev_hessians[k * data->n_data]), &(prev_residuals[k * data->n_data]));
+      if (recomputeRH == true) {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      } else {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      }
+      // tree->setPrevHessianResidual(&(prev_hessians[k * data->n_data]), &(prev_residuals[k * data->n_data]));
+      tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
       init_set_HR_time += t4.get_time_restart();
 
       tree->unlearnTree(nullptr, &fids, &unids, retrain_node_cnt, time_records);
@@ -1375,7 +1389,8 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     get_loss_time += t4.get_time_restart();
     double t1_time = t1.get_time_restart();
 

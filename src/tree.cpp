@@ -567,10 +567,20 @@ void Tree::buildTree(std::vector<uint> *ids, std::vector<uint> *fids) {
   in_leaf.shrink_to_fit();
 }
 
-void Tree::deleteIds() {
+void Tree::deleteIds(std::vector<double>& time_record) {
+  double get_split_ptr_time = 0;
+  double id_global_time = 0;
+  double merge_id_global_time = 0;
+  double change_split_time = 0;
+  double real_delete_id_time = 0;
+  Utils::Timer t1;
+  t1.restart();
   std::vector<uint> unids_tmp = unids;
+  int n_ids = ids.size();
 
   std::map<int, std::vector<int*>> split_ptr;
+//   std::vector<std::vector<int*>> split_ptr(n_ids + 1);
+//   std::vector<bool> split_mark(n_ids + 1);
   std::vector<uint> split_ids;
 
   int leaf_num = 0;
@@ -582,11 +592,19 @@ void Tree::deleteIds() {
   split_ids.reserve(split_num);
 
   for (int i = 0; i < nodes.size(); i++) {
-    if (nodes[i].start == -1 || nodes[i].end == -1) continue;
+    if (nodes[i].idx < 0 || nodes[i].start == -1 || nodes[i].end == -1) continue;
+    // if (nodes[i].start == -1 || nodes[i].end == -1) continue;
     split_ptr[nodes[i].start].push_back(&nodes[i].start);
     split_ptr[nodes[i].end].push_back(&nodes[i].end);
+//     split_mark[nodes[i].start] = true;
+//     split_mark[nodes[i].end] = true;
   }
   for (auto p : split_ptr) split_ids.emplace_back(p.first);
+//   for (int i = 0; i < n_ids; i++) {
+//     if (split_mark[i] == true) split_ids.emplace_back(i);
+//   }
+  split_num = split_ids.size();
+  get_split_ptr_time += t1.get_time_restart();
 
   std::vector<std::vector<uint>> id_global;
   std::vector<int> offset(split_num);
@@ -609,6 +627,7 @@ void Tree::deleteIds() {
       }
     }
   }
+  id_global_time += t1.get_time_restart();
 
   int sum_offset = 0, cnt = 0;
   for (int i = 0; i < split_num; i++) {
@@ -617,10 +636,12 @@ void Tree::deleteIds() {
     offset[cnt] = sum_offset;
     cnt++;
   }
+  merge_id_global_time += t1.get_time_restart();
 
   for (int i = 0; i < split_num; i++) {
     for (int* e : split_ptr[split_ids[i]]) *e -= offset[i];
   }
+  change_split_time += t1.get_time_restart();
 
   int last_ptr = 0, cur_ptr = 0, j = 0, ids_len = ids.size(), record_len = id_records.size();
   while (cur_ptr < ids_len) {
@@ -634,13 +655,20 @@ void Tree::deleteIds() {
     }
   }
   ids.resize(last_ptr);
+  real_delete_id_time += t1.get_time_restart();
+
+  time_record[0] = get_split_ptr_time;
+  time_record[1] = id_global_time;
+  time_record[2] = merge_id_global_time;
+  time_record[3] = change_split_time;
+  time_record[4] = real_delete_id_time;
 }
 
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
                        std::vector<uint> *unids_ptr, int &retrain_node_cnt,
                        std::vector<double>& time_records) {
-  time_records.resize(9);
-
+  time_records.resize(14);
+  std::vector<double> time_record_id(5, 0);
   double unlearn_binsort_time = 0;
   double split_unids_time = 0;
   double update_gains_time = 0;
@@ -660,7 +688,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   in_leaf.resize(data->Y.size());
   fids_record = (*(std::vector<uint> *)fids);
 
-  deleteIds();
+  deleteIds(time_record_id);
   delete_unids_time += t1.get_time_restart();
 
   dense_fids.reserve(fids->size());
@@ -676,7 +704,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
-  std::vector<std::pair<uint, uint>> range(n_nodes, std::make_pair(0, 0));
+  range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
   if (range.size() > 0) range[0] = std::make_pair(0, (this->unids).size());
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
@@ -823,7 +851,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   retrain_time += t1.get_time_restart();
 
   hist_record = *hist;
-  regress();
+  regress(range);
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
   finalize_time += t1.get_time_restart();
@@ -837,6 +865,11 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   time_records[6] += prepare_fid_time;
   time_records[7] += unlearn_setting_time;
   time_records[8] += finalize_time;
+  time_records[9] += time_record_id[0];
+  time_records[10] += time_record_id[1];
+  time_records[11] += time_record_id[2];
+  time_records[12] += time_record_id[3];
+  time_records[13] += time_record_id[4];
 }
 
 void Tree::updateFeatureImportance(int iter) {
@@ -1401,6 +1434,42 @@ void Tree::regress() {
   }
 }
 
+void Tree::regress(std::vector<std::pair<uint, uint>>& range) {
+  double correction = 1.0;
+  if (data->data_header.n_classes != 1 && config->model_name.size() >= 3 &&
+      config->model_name.substr(0, 3) != "abc")
+    correction -= 1.0 / data->data_header.n_classes;
+  double upper = config->tree_clip_value, lower = -upper;
+
+  auto* H = hessian;
+  auto* R = residual;
+  const bool is_weighted_update = config->model_use_weighted_update;
+  leaf_ids.clear();
+
+  for (int i = 0; i < nodes.size(); ++i) {
+    if (nodes[i].idx >= 0 && nodes[i].is_leaf) {
+      leaf_ids.push_back(i);
+      if (range[i].second - range[i].first <= 0) continue;
+      double numerator = 0.0, denominator = 0.0;
+      uint start = nodes[i].start, end = nodes[i].end;
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1) reduction(+: numerator, denominator),
+        config->use_omp == true,
+        for (uint d = start; d < end; ++d) {
+          auto id = ids[d];
+          numerator += R[id];
+          denominator += H[id];
+        }
+      )
+      nodes[i].predict_v =
+          std::min(std::max(correction * numerator /
+                                (denominator + config->tree_damping_factor),
+                            lower),
+                   upper);
+    }
+  }
+}
+
 /**
  * Save tree in a specified path.
  * @param[in] fp: Pointer to the FILE object
@@ -1464,6 +1533,13 @@ void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
   uint pstart = range[x].first;
   uint pend = range[x].second;
   uint n_ids = pend - pstart;
+  if (n_ids <= 0) {
+    range[l].first = pstart;
+    range[l].second = pstart;
+    range[l + 1].first = pstart;
+    range[l + 1].second = pstart;
+    return;
+  }
 
   int split_v = nodes[x].split_v;
   uint fid = nodes[x].split_fi, li = pstart, ri = 0;
