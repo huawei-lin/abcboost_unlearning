@@ -1250,6 +1250,8 @@ void Mart::train() {
       fids_record.emplace_back(fids);
     
     computeHessianResidual();
+    hessians_record.emplace_back(hessians);
+    residuals_record.emplace_back(residuals);
 
     for (int k = 0; k < K; ++k) {
       
@@ -1316,7 +1318,12 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     if (fids_record.size() != 0) fids = fids_record[m];
 
-    computeHessianResidual();
+    if (residuals_record.size() == 0 || m >= config->model_n_iterations*0.9) {
+      computeHessianResidual();
+    } else {
+      residuals = residuals_record[m];
+      hessians = hessians_record[m];
+    }
     computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
 
     for (int k = 0; k < K; ++k) {
@@ -1439,7 +1446,15 @@ void GradientBoosting::serializeTrees(FILE *fp, int M) {
       fwrite(&fids_record[i][j], sizeof(fids_record[i][j]), 1, fp);
     }
   }
-  for (int i = 0; i < M; ++i)
+  for (int i = 0; i < M; ++i) {
+    int n_hess_resi = hessians_record.size() == 0?0:data->data_header.n_classes * data->n_data;
+    fwrite(&n_hess_resi, sizeof(n_hess_resi), 1, fp);
+    for (int j = 0; j < n_hess_resi; j++) {
+      fwrite(&hessians_record[i][j], sizeof(hessians_record[i][j]), 1, fp);
+    }
+    for (int j = 0; j < n_hess_resi; j++) {
+      fwrite(&residuals_record[i][j], sizeof(residuals_record[i][j]), 1, fp);
+    }
     for (int j = 0; j < K; ++j) {
       if (additive_trees[i][j] == nullptr) {
         int n = 0;
@@ -1448,6 +1463,7 @@ void GradientBoosting::serializeTrees(FILE *fp, int M) {
       }
       additive_trees[i][j]->saveTree(fp);
     }
+  }
 }
 
 void GradientBoosting::deserializeTrees(FILE *fp) {
@@ -1481,6 +1497,17 @@ void GradientBoosting::deserializeTrees(FILE *fp) {
   }
 
   for (int i = 0; i < M; ++i){
+    int n_hess_resi = 0;
+    fread(&n_hess_resi, sizeof(n_hess_resi), 1, fp);
+    std::vector<double> hessians_temp(n_hess_resi), residuals_temp(n_hess_resi);
+    for (int j = 0; j < n_hess_resi; j++) {
+      fread(&hessians_temp[j], sizeof(hessians_temp[j]), 1, fp);
+    }
+    for (int j = 0; j < n_hess_resi; j++) {
+      fread(&residuals_temp[j], sizeof(residuals_temp[j]), 1, fp);
+    }
+    if (n_hess_resi != 0) residuals_record.emplace_back(residuals_temp);
+    if (n_hess_resi != 0) hessians_record.emplace_back(hessians_temp);
     for (int j = 0; j < K; ++j) {
       if(i >= config->model_n_iterations){
         auto dummy_tree = std::unique_ptr<Tree>(new Tree(data, config));
