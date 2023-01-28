@@ -605,6 +605,9 @@ void GradientBoosting::updateF(int k, Tree *tree, std::vector<std::vector<double
       // printf("found negative leaf id\n");
       continue;
     }
+    if (tree->range.size() > 0 && tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
+      continue;
+    }
     const Tree::TreeNode& node = tree->nodes[leaf_id];
     double update = config->model_shrinkage * node.predict_v;
     unsigned int start = node.start, end = node.end;
@@ -1131,7 +1134,8 @@ void BinaryMart::train() {
     updateF(tree);
     additive_trees[m][0] = std::unique_ptr<Tree>(tree);
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
@@ -1270,7 +1274,8 @@ void Mart::train() {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
@@ -1318,21 +1323,23 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     if (fids_record.size() != 0) fids = fids_record[m];
 
-    if (residuals_record.size() == 0 || m >= config->model_n_iterations*0.9) {
+    bool recomputeRH = false;
+    if (residuals_record.size() == 0 || m%5 == 0) {
       computeHessianResidual();
-    } else {
-      residuals = residuals_record[m];
-      hessians = hessians_record[m];
+      recomputeRH = true;
     }
-    computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
 
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
-      updateF(k, tree, prev_F);
-      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
-                 &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
-      tree->setPrevHessianResidual(&(prev_hessians[k * data->n_data]), &(prev_residuals[k * data->n_data]));
+      if (recomputeRH == true) {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      } else {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      }
+      tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
       tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
       updateF(k, tree);
@@ -1342,7 +1349,8 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }

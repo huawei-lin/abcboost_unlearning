@@ -658,8 +658,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
-  std::vector<std::pair<uint, uint>> range(n_nodes, std::make_pair(0, 0));
-  if (range.size() > 0) range[0] = std::make_pair(0, (this->unids).size());
+  range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
+  range[0] = std::make_pair(0, (this->unids).size());
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
@@ -796,7 +796,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   }
 
   hist_record = *hist;
-  regress();
+  regress(range);
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
 }
@@ -1363,6 +1363,42 @@ void Tree::regress() {
   }
 }
 
+void Tree::regress(std::vector<std::pair<uint, uint>>& range) {
+  double correction = 1.0;
+  if (data->data_header.n_classes != 1 && config->model_name.size() >= 3 &&
+      config->model_name.substr(0, 3) != "abc")
+    correction -= 1.0 / data->data_header.n_classes;
+  double upper = config->tree_clip_value, lower = -upper;
+
+  auto* H = hessian;
+  auto* R = residual;
+  const bool is_weighted_update = config->model_use_weighted_update;
+  leaf_ids.clear();
+
+  for (int i = 0; i < nodes.size(); ++i) {
+    if (nodes[i].idx >= 0 && nodes[i].is_leaf) {
+      leaf_ids.push_back(i);
+      if (range[i].second - range[i].first <= 0) continue;
+      double numerator = 0.0, denominator = 0.0;
+      uint start = nodes[i].start, end = nodes[i].end;
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1) reduction(+: numerator, denominator),
+        config->use_omp == true,
+        for (uint d = start; d < end; ++d) {
+          auto id = ids[d];
+          numerator += R[id];
+          denominator += H[id];
+        }
+      )
+      nodes[i].predict_v =
+          std::min(std::max(correction * numerator /
+                                (denominator + config->tree_damping_factor),
+                            lower),
+                   upper);
+    }
+  }
+}
+
 /**
  * Save tree in a specified path.
  * @param[in] fp: Pointer to the FILE object
@@ -1426,6 +1462,13 @@ void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
   uint pstart = range[x].first;
   uint pend = range[x].second;
   uint n_ids = pend - pstart;
+  if (n_ids <= 0) {
+    range[l].first = pstart;
+    range[l].second = pstart;
+    range[l + 1].first = pstart;
+    range[l + 1].second = pstart;
+    return;
+  }
 
   int split_v = nodes[x].split_v;
   uint fid = nodes[x].split_fi, li = pstart, ri = 0;

@@ -89,6 +89,7 @@ class Tree {
   // below are key properties of tree (saved after training)
   std::vector<short> leaf_ids;
   std::vector<TreeNode> nodes;
+  std::vector<std::pair<uint, uint>> range;
   bool is_weighted;
   int n_leaves, n_threads;
 
@@ -143,6 +144,7 @@ class Tree {
   std::vector<double> predictAll(Data *data);
 
   void regress();
+  void regress(std::vector<std::pair<uint, uint>>& range);
 
   void saveTree(FILE *fileptr);
 
