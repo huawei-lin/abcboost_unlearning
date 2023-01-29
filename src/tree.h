@@ -53,6 +53,7 @@ class Tree {
     bool is_leaf;
     bool allow_build_subtree;
     bool is_random_node;
+    bool has_retrain;
     short idx, left, right, parent;
     int start, end;
     // below are prediction related

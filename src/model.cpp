@@ -601,10 +601,12 @@ void GradientBoosting::updateF(int k, Tree *tree) {
       // printf("found negative leaf id\n");
       continue;
     }
-    if (tree->range.size() > 0 && tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
+    const Tree::TreeNode& node = tree->nodes[leaf_id];
+    if (tree->range.size() > 0 && \
+        node.has_retrain == false && \
+        tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
       continue;
     }
-    const Tree::TreeNode& node = tree->nodes[leaf_id];
     double update = config->model_shrinkage * node.predict_v;
     unsigned int start = node.start, end = node.end;
 #pragma omp parallel for
@@ -1347,16 +1349,10 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     t1.restart();
     t4.restart();
     bool recomputeRH = false;
-    if (residuals_record.size() == 0 || m >= config->model_n_iterations*0.9) {
+    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual();
       recomputeRH = true;
     }
-//     } else {
-//       recomputeRH = false;
-// //       residuals = residuals_record[m];
-// //       hessians = hessians_record[m];
-//     }
-    // computeHessianResidual(prev_residuals, prev_hessians, prev_F, unids);
     compute_HR_time += t4.get_time_restart();
 
     int retrain_node_cnt = 0;
@@ -1364,7 +1360,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
-      // updateF(k, tree, prev_F);
       updateF_1_time += t4.get_time_restart();
       if (recomputeRH == true) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
@@ -1373,7 +1368,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      // tree->setPrevHessianResidual(&(prev_hessians[k * data->n_data]), &(prev_residuals[k * data->n_data]));
       tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
       init_set_HR_time += t4.get_time_restart();
 
