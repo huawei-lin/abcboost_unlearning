@@ -132,6 +132,7 @@ class Config {
   double gbrank_tau = 0.1;
   double gbrank_update_factor = 100;
   std::string map_dump_format = "";
+  int lazy_update_freq = 1;
 
   // Rank Query File
   std::string rank_query_file = "";
@@ -600,6 +601,8 @@ class Config {
         gbrank_update_factor = stod(value);
       } else if (key == "map_dump_format" || key == "dump") {
         map_dump_format = value;
+      } else if (key == "lazy_update_freq") {
+        lazy_update_freq = stoi(value);
       } else if (key == "model_warmup_iter" || key == "warmup_iter") {
         warmup_iter = stoi(value);
       } else if (key == "model_warmup_use_logit" || key == "warmup_use_logit") {

@@ -79,6 +79,7 @@ Tree::TreeNode::TreeNode() {
   is_leaf = true;
   allow_build_subtree = true;
   is_random_node = false;
+  has_retrain = false;
   start = end = -1;
   idx = left = right = parent = -1;
   split_fi = split_v = -1;
@@ -773,6 +774,8 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         break;
       }
       split(idx, l);
+      nodes[l].has_retrain = true;
+      nodes[r].has_retrain = true;
       lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
       if (lsz < msz && rsz < msz) {
 //         fprintf(stderr,
@@ -1378,7 +1381,7 @@ void Tree::regress(std::vector<std::pair<uint, uint>>& range) {
   for (int i = 0; i < nodes.size(); ++i) {
     if (nodes[i].idx >= 0 && nodes[i].is_leaf) {
       leaf_ids.push_back(i);
-      if (range[i].second - range[i].first <= 0) continue;
+      if (nodes[i].has_retrain == false && range[i].second - range[i].first <= 0) continue;
       double numerator = 0.0, denominator = 0.0;
       uint start = nodes[i].start, end = nodes[i].end;
       CONDITION_OMP_PARALLEL_FOR(

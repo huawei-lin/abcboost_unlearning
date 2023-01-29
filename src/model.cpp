@@ -589,6 +589,11 @@ void GradientBoosting::updateF(int k, Tree *tree) {
       continue;
     }
     const Tree::TreeNode& node = tree->nodes[leaf_id];
+    if (tree->range.size() > 0 && \
+        node.has_retrain == false && \
+        tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
+      continue;
+    }
     double update = config->model_shrinkage * node.predict_v;
     unsigned int start = node.start, end = node.end;
 #pragma omp parallel for
@@ -608,6 +613,7 @@ void GradientBoosting::updateF(int k, Tree *tree, std::vector<std::vector<double
     if (tree->range.size() > 0 && tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
       continue;
     }
+
     const Tree::TreeNode& node = tree->nodes[leaf_id];
     double update = config->model_shrinkage * node.predict_v;
     unsigned int start = node.start, end = node.end;
@@ -1324,7 +1330,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     if (fids_record.size() != 0) fids = fids_record[m];
 
     bool recomputeRH = false;
-    if (residuals_record.size() == 0 || m%5 == 0) {
+    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual();
       recomputeRH = true;
     }
