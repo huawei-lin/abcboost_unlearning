@@ -130,8 +130,8 @@ void GradientBoosting::print_train_message(int iter,double loss,double iter_time
     fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
 }
 
-void GradientBoosting::print_unlearn_message(int iter,double loss,double iter_time, int retrain_node_cnt, std::vector<double>& time_records, std::vector<double>& time_records_2){
-  int err = getError();
+void GradientBoosting::print_unlearn_message(int iter,double loss,std::vector<std::vector<double>>& F,double iter_time, int retrain_node_cnt, std::vector<double>& time_records, std::vector<double>& time_records_2){
+  int err = getError(F);
   printf("%4d | loss: %20.14e | errors: %7d | time: %.5f | retrain_node_cnt: %d | unlearn_binsort_time: %.5f | split_unids_time: %.5f | update_gains_time: %.5f | get_retrain_ids_time: %.5f | retrain_time: %.5f | delete_unids_time: %.5f | prepare_fid_time: %.5f | unlearn_setting_time: %.5f | finalize_time: %.5f | compute_HR_time: %.5f | updateF_1_time: %.5f | init_set_HR_time: %.5f | unlearnTree_time: %.5f | update_FI_time: %.5f | update_F_2_time: %.5f | get_loss_time: %.5f | get_split_ptr_time: %.5f | id_global_time: %.5f | merge_id_global_time: %.5f | change_split_time: %.5f | real_delete_id_time: %.5f\n", iter,
        loss, err, iter_time, retrain_node_cnt, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], time_records[6], time_records[7], time_records[8], time_records_2[0], time_records_2[1], time_records_2[2], time_records_2[3], time_records_2[4], time_records_2[5], time_records_2[6], time_records[9], time_records[10], time_records[11], time_records[12], time_records[13]);
 #ifdef USE_R_CMD
@@ -320,6 +320,20 @@ double GradientBoosting::getAccuracy() {
 }
 
 int GradientBoosting::getError() {
+  int accuracy = 0;
+#pragma omp parallel for reduction(+ : accuracy)
+  for (int k = 0; k < ids.size(); ++k) {
+    int prediction = 0, i = ids[k];
+    for (int k = 1; k < data->data_header.n_classes; ++k)
+      if (F[k][i] > F[prediction][i])
+        prediction = k;
+    if (prediction == int(data->Y[i]))
+      ++accuracy;
+  }
+  return ids.size() - accuracy;
+}
+
+int GradientBoosting::getError(std::vector<std::vector<double>>& F) {
   int accuracy = 0;
 #pragma omp parallel for reduction(+ : accuracy)
   for (int k = 0; k < ids.size(); ++k) {
@@ -615,19 +629,28 @@ void GradientBoosting::updateF(int k, Tree *tree) {
   // tree->freeMemory();
 }
 
-void GradientBoosting::updateF(int k, Tree *tree, std::vector<std::vector<double>>& F) {
+void GradientBoosting::updateF(int m, int k, Tree *tree, \
+    std::vector<std::vector<std::vector<double>>>& F){
+  // if (m + 1 == config->model_n_iterations) return;
   std::vector<unsigned int> &ids = tree->ids;
-  std::vector<double> &f = F[k];
+  std::vector<double> &f = F[m][k];
+  std::vector<double> &f_next = F[m + 1][k];
   for (auto leaf_id : tree->leaf_ids) {
     if (leaf_id < 0) {
       // printf("found negative leaf id\n");
       continue;
     }
     const Tree::TreeNode& node = tree->nodes[leaf_id];
+    // this operation would loss accuracy
+    if (tree->range.size() > 0 && \
+        node.has_retrain == false && \
+        tree->range[leaf_id].second - tree->range[leaf_id].first <= 0) {
+      continue;
+    }
     double update = config->model_shrinkage * node.predict_v;
     unsigned int start = node.start, end = node.end;
 #pragma omp parallel for
-    for (int i = start; i < end; ++i) f[ids[i]] += update;
+    for (int i = start; i < end; ++i) f_next[ids[i]] = f[ids[i]] + update;
   }
   // tree->freeMemory();
 }
@@ -1149,7 +1172,8 @@ void BinaryMart::train() {
     updateF(tree);
     additive_trees[m][0] = std::unique_ptr<Tree>(tree);
 
-    double loss = getLoss();
+    // double loss = getLoss();
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
       print_train_message(m + 1,loss,t1.get_time_restart());
     }
@@ -1267,6 +1291,7 @@ void Mart::train() {
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
       fids_record.emplace_back(fids);
     
+    F_record.emplace_back(F);
     computeHessianResidual();
     hessians_record.emplace_back(hessians);
     residuals_record.emplace_back(residuals);
@@ -1287,6 +1312,7 @@ void Mart::train() {
 //#pragma omp parallel for
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
+    F_record.emplace_back(F);
 
     // double loss = getLoss();
     double loss = 0;
@@ -1350,7 +1376,8 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     t4.restart();
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
-      computeHessianResidual();
+      // computeHessianResidual();
+      computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
     compute_HR_time += t4.get_time_restart();
@@ -1375,7 +1402,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       unlearnTree_time += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       update_FI_time += t4.get_time_restart();
-      updateF(k, tree);
+      updateF(m, k, tree, F_record);
       update_F_2_time += t4.get_time_restart();
     }
 //    if (data->data_header.n_classes == 2) {
@@ -1397,7 +1424,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     time_records_2[5] = update_F_2_time;
     time_records_2[6] = get_loss_time;
     if ((m + 1) % config->model_eval_every == 0){
-      print_unlearn_message(m + 1,loss,t1_time, retrain_node_cnt, time_records, time_records_2);
+      print_unlearn_message(m + 1,loss,F_record[m + 1],t1_time, retrain_node_cnt, time_records, time_records_2);
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
 //     if(loss < config->stop_tolerance){
@@ -1434,12 +1461,10 @@ void Mart::computeHessianResidual() {
   }
 }
 
-void Mart::computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians, std::vector<std::vector<double>>& F, std::vector<uint>& ids) {
+void Mart::computeHessianResidual(std::vector<std::vector<double>>& F) {
   std::vector<double> prob;
-  int n_ids = ids.size();
 #pragma omp parallel for schedule(static) private(prob)
-  for (unsigned int j = 0; j < n_ids; ++j) {
-    int i = ids[j];
+  for (unsigned int i = 0; i < data->n_data; ++i) {
     prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
@@ -1499,6 +1524,19 @@ void GradientBoosting::serializeTrees(FILE *fp, int M) {
       fwrite(&fids_record[i][j], sizeof(fids_record[i][j]), 1, fp);
     }
   }
+  int n_F = F_record.size();
+  int n_F_1 = data->data_header.n_classes;
+  int n_F_2 = data->n_data;
+  fwrite(&n_F, sizeof(n_F), 1, fp);
+  fwrite(&n_F_1, sizeof(n_F_1), 1, fp);
+  fwrite(&n_F_2, sizeof(n_F_2), 1, fp);
+  for (int i = 0; i < n_F; i++) {
+    for (int j = 0; j < n_F_1; j++) {
+      for (int k = 0; k < n_F_2; k++) {
+        fwrite(&F_record[i][j][k], sizeof(F_record[i][j][k]), 1, fp);
+      }
+    }
+  }
   for (int i = 0; i < M; ++i) {
     int n_hess_resi = hessians_record.size() == 0?0:data->data_header.n_classes * data->n_data;
     fwrite(&n_hess_resi, sizeof(n_hess_resi), 1, fp);
@@ -1546,6 +1584,21 @@ void GradientBoosting::deserializeTrees(FILE *fp) {
     fids_record[i].resize(len_fids);
     for (int j = 0; j < len_fids; j++) {
       fread(&fids_record[i][j], sizeof(fids_record[i][j]), 1, fp);
+    }
+  }
+
+  int n_F, n_F_1, n_F_2;
+  fread(&n_F, sizeof(n_F), 1, fp);
+  fread(&n_F_1, sizeof(n_F_1), 1, fp);
+  fread(&n_F_2, sizeof(n_F_2), 1, fp);
+  F_record = std::vector<std::vector<std::vector<double>>>(n_F,
+      std::vector<std::vector<double>>(n_F_1,
+      std::vector<double>(n_F_2, 0)));
+  for (int i = 0; i < n_F; i++) {
+    for (int j = 0; j < n_F_1; j++) {
+      for (int k = 0; k < n_F_2; k++) {
+        fread(&F_record[i][j][k], sizeof(F_record[i][j][k]), 1, fp);
+      }
     }
   }
 

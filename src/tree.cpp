@@ -706,7 +706,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
   range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
-  if (range.size() > 0) range[0] = std::make_pair(0, (this->unids).size());
+  range[0] = std::make_pair(0, (this->unids).size());
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   unlearn_setting_time += t1.get_time_restart();
@@ -855,7 +855,6 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   hist_record = *hist;
   regress(range);
-  // regress();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
   finalize_time += t1.get_time_restart();

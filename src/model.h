@@ -57,6 +57,7 @@ class GradientBoosting {
   std::vector<std::vector<std::unique_ptr<Tree>>> additive_trees;
   std::vector<std::vector<double>> F;//, hessians, residuals;
 	std::vector<double> hessians,residuals;
+  std::vector<std::vector<std::vector<double>>> F_record;
   std::vector<std::vector<double>> hessians_record, residuals_record;
   std::vector<double> feature_importance;
   std::vector<unsigned int> ids, fids;
@@ -84,6 +85,7 @@ class GradientBoosting {
   int argmax(std::vector<double>& f_vector);
   virtual double getAccuracy();
 	virtual int getError();
+  int getError(std::vector<std::vector<double>>& F);
   virtual double getLoss();
   virtual double getAUC();
   double getAUC(double* f_values, int k);
@@ -93,7 +95,9 @@ class GradientBoosting {
   void setupExperiment();
   void softmax(std::vector<double>& v);
   void updateF(int k, Tree* currTree);
-  void updateF(int k, Tree *tree, std::vector<std::vector<double>>& F);
+  void updateF(int m, int k, Tree *tree, \
+      std::vector<std::vector<std::vector<double>>>& F);
+  void computeHessianResidual(std::vector<std::vector<double>>& F);
   void zeroBins();
 
   virtual int loadModel();
@@ -121,7 +125,7 @@ class GradientBoosting {
 	void print_test_message(int iter,double iter_time,int& low_err);
 	virtual void print_test_message(int iter,double iter_time,double& low_loss) {}
 	virtual void print_train_message(int iter,double loss,double iter_time);
-        void print_unlearn_message(int iter,double loss,double iter_time, int retrain_node_cnt, std::vector<double>& time_records, std::vector<double>& time_records_2);
+        void print_unlearn_message(int iter,double loss,std::vector<std::vector<double>>& F,double iter_time, int retrain_node_cnt, std::vector<double>& time_records, std::vector<double>& time_records_2);
 	
   // only for ranking
   virtual void print_rank_test_message(int iter,double iter_time);
@@ -179,7 +183,7 @@ class Mart : public GradientBoosting {
 
  private:
   void computeHessianResidual();
-  void computeHessianResidual(std::vector<double>& residuals, std::vector<double>& hessians, std::vector<std::vector<double>>& F, std::vector<uint>& ids);
+  void computeHessianResidual(std::vector<std::vector<double>>& F);
 };
 
 class ABCMart : public GradientBoosting {
