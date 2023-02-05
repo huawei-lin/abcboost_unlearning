@@ -1395,7 +1395,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
+      // tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
       init_set_HR_time += t4.get_time_restart();
 
       tree->unlearnTree(nullptr, &fids, &unids, retrain_node_cnt, time_records);
