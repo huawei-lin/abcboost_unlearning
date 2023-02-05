@@ -362,6 +362,8 @@ class Config {
 * `-tree_damping_factor`, regularization on numerator (default 1e-100)\n\
 * `-tree_max_n_leaves`, -J (default 20)\n\
 * `-tree_min_node_size` (default 10)\n\
+* `-tree_n_random_layers` (default 0)\n\
+* `-feature_split_sample_rate` (default 1.0)\n\
 #### Model related:\n\
 * `-model_use_logit`, whether use logitboost\n\
 * `-model_data_sample_rate` (default 1.0)\n\
@@ -387,6 +389,7 @@ class Config {
 * `-regression_huber_delta`, `-huber_delta` the delta parameter for huber loss. This parameter only takes into effect when `-regression_huber_loss 1` is set\n\
 #### Unlearning related:\n\
 * `-unlearning_ids_path` path to unlearning's indies\n\
+* `-lazy_update_freq` (default 1)\n\
 #### Parallelism:\n\
 * `-n_threads`, `-threads` (default 1)\n\
 * `-use_gpu` 0/1 (default 1 if compiled with CUDA) whether use GPU to train models. This parameter only takes into effect when the flag `-DCUDA=on` is set in `cmake`.\n\

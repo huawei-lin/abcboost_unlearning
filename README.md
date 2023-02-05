@@ -184,6 +184,8 @@ The labels in the specified additional files are not used in the training. Only 
 * `-tree_damping_factor`, regularization on denominator (default 1e-100)
 * `-tree_max_n_leaves`, -J (default 20)
 * `-tree_min_node_size` (default 10)
+* `-tree_n_random_layers` (default 0)
+* `-feature_split_sample_rate` (default 1.0)
 #### Model related:
 * `-model_use_logit`, whether use logitboost
 * `-model_data_sample_rate` (default 1.0)
@@ -207,6 +209,9 @@ The labels in the specified additional files are not used in the training. Only 
 * `-regression_use_hessian` 0/1 (default 1) whether use second-order derivatives in the regression. This parameter only takes into effect when `-regression_lp_loss p` is set and `p` is greater than `2`.
 * `-regression_huber_loss`, `-huber` 0/1 (default 0) whether use huber loss
 * `-regression_huber_delta`, `-huber_delta` the delta parameter for huber loss. This parameter only takes into effect when `-regression_huber_loss 1` is set
+#### Unlearning related:
+* `-unlearning_ids_path` path to unlearning's indies
+* `-lazy_update_freq` (default 1)
 #### Parallelism:
 * `-n_threads`, `-threads` (default 1)
 * `-use_gpu` 0/1 (default 1 if compiled with CUDA) whether use GPU to train models. This parameter only takes into effect when the executable is complied with CUDA (i.e., the flag `-DCUDA=on` is enabled in `cmake`).
