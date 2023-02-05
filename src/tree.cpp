@@ -318,13 +318,13 @@ void Tree::binSort(int x, int sib) {
 
 void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids) {
   if (end - start <= 0) return;
-  const auto* H = prev_hessian;
-  const auto* R = prev_residual;
+  const auto* H = hessian;
+  const auto* R = residual;
   uint fsz = fids->size();
 
   if (sib == -1) {
     if(!(start == 0 && end == data->n_data)){
-      alignHessianResidual(start,end, prev_hessian, prev_residual, ids);
+      alignHessianResidual(start,end, hessian, residual, ids);
     }
 
     double r_unobserved = 0.0;
@@ -894,8 +894,8 @@ std::pair<double, double> Tree::featureGain(int x, uint fid) const{
 void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains_start, int gains_end, \
                        std::vector<uint>& unids, int unids_start, int unids_end) { // Suppose unids is ordered
   if (unids_end - unids_start <= 0) return;
-  const auto* H = prev_hessian;
-  const auto* R = prev_residual;
+  const auto* H = hessian;
+  const auto* R = residual;
 
   int unids_len = unids_end - unids_start;
   std::vector<hist_t> s(unids_len), w(unids_len);
@@ -1164,11 +1164,6 @@ void Tree::init(
   this->ids_tmp = ids_tmp;
   this->H_tmp = H_tmp;
   this->R_tmp = R_tmp;
-}
-
-void Tree::setPrevHessianResidual(double *prev_hessian, double *prev_residual) {
-  this->prev_hessian = prev_hessian;
-  this->prev_residual = prev_residual;
 }
 
 /**

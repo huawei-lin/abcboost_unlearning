@@ -1363,7 +1363,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
-      // computeHessianResidual();
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
@@ -1378,7 +1377,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      tree->setPrevHessianResidual(&(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]));
       tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
       updateF(m, k, tree, F_record);

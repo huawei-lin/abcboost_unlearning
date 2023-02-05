@@ -74,7 +74,6 @@ class Tree {
   std::vector<std::vector<uint>> *l_buffer, *r_buffer;
   std::vector<double> *feature_importance;
   double *hessian, *residual;
-  double *prev_hessian, *prev_residual;
 
   // ids stores the instance indices for each node
   std::vector<uint> ids;
@@ -134,8 +133,6 @@ class Tree {
                 uint* ids_tmp,
                 double* H_tmp,
                 double* R_tmp);
-
-  void setPrevHessianResidual(double *prev_hessian, double *prev_residual);
 
   void populateTree(const std::string line);
   void populateTree(FILE *fileptr);
