@@ -136,6 +136,14 @@ Before the training stage, each feature is preprocessed to be integers between `
 
 ```
 
+### Unlearning
+```
+./abcboost_train -method robustlogit -data data/covtype.train.csv -J 20 -v 0.1 -iter 10 -feature_split_sample_rate 0.1
+for i in {1..10}; do echo $(($RANDOM%20000)); done > unids.txt
+./abcboost_unlearn -data data/covtype.train.csv -model covtype.train.csv_robustlogit_J20_v0.1.model -unlearning_ids_path ./unids.txt -feature_split_sample_rate 0.1
+```
+
+
 ### GPU 
 
 If the executables are compiled with GPU support, we can specify the GPU device from the command line:
