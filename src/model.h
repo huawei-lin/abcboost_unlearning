@@ -106,6 +106,7 @@ class GradientBoosting {
   virtual void test();
   virtual void train();
   virtual void unlearn(std::vector<uint>& unidxs);
+  virtual void tune(std::vector<uint>& tune_ids);
 
   virtual void savePrediction();
 
@@ -178,6 +179,7 @@ class Mart : public GradientBoosting {
   void test();
   void train();
   void unlearn(std::vector<uint>& unidxs);
+  void tune(std::vector<uint>& tune_ids);
   void test_rank();
   friend class MOCMart;
 

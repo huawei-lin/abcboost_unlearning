@@ -147,6 +147,9 @@ class Data {
   std::vector<unsigned int> i_offset, v_offset;  // the offset used in GPU
   std::vector<unsigned int> valid_fi;            // non-empty feature indices
 
+  std::vector<unsigned int> tune_ids;
+  int Xi_offset;
+
   double sparsity_threshold;  // above which we will treat the feature as dense
   unsigned int n_data, n_dense;
 
@@ -164,7 +167,7 @@ class Data {
   ~Data();
 
   void load();
-  void loadData(bool from_scratch);
+  void loadData(bool from_scratch, std::string data_path = "");
   void loadDataHeader(FILE* fileptr = NULL);
   void printData(unsigned int n = 10);
   void printSummary();

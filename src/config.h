@@ -144,6 +144,9 @@ class Config {
   // Unlearning config
   std::string unlearning_ids_path = "";
 
+  // Tuning config
+  std::string tuning_data_path = "";
+
   Config(const char* path = "config.txt") {
     std::ifstream file(path);
     if (file.is_open()) {
@@ -645,6 +648,8 @@ class Config {
         abc_sample_min_data = stoi(value);
       } else if (key == "unlearning_ids_path") {
         unlearning_ids_path = std::string(value);
+      } else if (key == "tuning_data_path") {
+        tuning_data_path = std::string(value);
       } else {
         printf("[ERROR] Unknown argument [%s]\n", key.c_str());
         if(from_wrapper == false){

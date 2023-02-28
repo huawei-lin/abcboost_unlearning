@@ -253,6 +253,7 @@ void GradientBoosting::train() { return; }
  * Unlearn method.
  */
 void GradientBoosting::unlearn(std::vector<uint>& unidxs) { return; }
+void GradientBoosting::tune(std::vector<uint>& tune_ids) { return; }
 
 /**
  * Method to get the argmax of a vector.
@@ -490,6 +491,9 @@ std::vector<unsigned int> GradientBoosting::sample(int n, double sample_rate) {
 void GradientBoosting::saveModel(int iter) {
   if(config->model_mode == "unlearn") {
     config->model_suffix = "_unlearn" + config->model_suffix;
+  }
+  if(config->model_mode == "tune") {
+    config->model_suffix = "_tune" + config->model_suffix;
   }
   FILE *model_out =
       fopen((experiment_path + config->model_suffix).c_str(), "wb");
@@ -1310,7 +1314,6 @@ void Mart::train() {
 //#pragma omp parallel for
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
-    F_record.emplace_back(F);
 
     // double loss = getLoss();
     double loss = 0;
@@ -1323,6 +1326,7 @@ void Mart::train() {
 //       break;
 //     }
   }
+  F_record.emplace_back(F);
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
   if (config->save_model) saveModel(config->model_n_iterations);
@@ -1335,10 +1339,6 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   // set up buffers for OpenMP
   std::vector<std::vector<std::vector<unsigned int>>> buffer =
       GradientBoosting::initBuffer();
-  std::vector<std::vector<double>> prev_F(data->data_header.n_classes,
-                                     std::vector<double>(data->n_data, 0));
-  std::vector<double> prev_hessians(data->data_header.n_classes * data->n_data), \
-                      prev_residuals(data->data_header.n_classes * data->n_data);
 
   deleteIds(unids);
 
@@ -1378,6 +1378,74 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
       tree->unlearnTree(nullptr, &fids, &unids);
+      tree->updateFeatureImportance(m);
+      updateF(m, k, tree, F_record);
+    }
+//    if (data->data_header.n_classes == 2) {
+//#pragma omp parallel for
+//      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
+//    }
+
+    // double loss = getLoss();
+    double loss = 0;
+    if ((m + 1) % config->model_eval_every == 0){
+      print_unlearn_message(m + 1,loss,t1.get_time_restart(), F_record[m + 1]);
+    }
+    // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+//     if(loss < config->stop_tolerance){
+//       config->model_n_iterations = m + 1;
+//       break;
+//     }
+  }
+  printf("Training has taken %.5f seconds\n", t2.get_time());
+
+  if (config->save_model) saveModel(config->model_n_iterations);
+
+  if (config->save_importance) getTopFeatures();
+
+}
+
+void Mart::tune(std::vector<unsigned int>& tune_ids) {
+  // set up buffers for OpenMP
+  std::vector<std::vector<std::vector<unsigned int>>> buffer =
+      GradientBoosting::initBuffer();
+
+  // build one tree if it is binary prediction
+  // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
+  int K = data->data_header.n_classes;
+
+  Utils::Timer t1, t2, t3;
+  t1.restart();
+  t2.restart();
+  t3.restart();
+
+  for (int m = start_epoch; m < config->model_n_iterations; m++) {
+    if (config->model_data_sample_rate < 1)
+      ids = sample(data->n_data, config->model_data_sample_rate);
+    if (config->model_feature_sample_rate < 1)
+      fids =
+          // sample(data->data_header.n_feats, config->model_feature_sample_rate);
+          sample((data->valid_fi).size(), config->model_feature_sample_rate);
+
+    if (fids_record.size() != 0) fids = fids_record[m];
+
+    bool recomputeRH = false;
+    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
+      computeHessianResidual(F_record[m]);
+      recomputeRH = true;
+    }
+
+    for (int k = 0; k < K; ++k) {
+
+      Tree *tree = additive_trees[m][k].get();
+      if (recomputeRH == true) {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      } else {
+        tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                   &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+      }
+      tree->tuneTree(nullptr, &fids, &tune_ids);
       tree->updateFeatureImportance(m);
       updateF(m, k, tree, F_record);
     }
@@ -1564,21 +1632,34 @@ void GradientBoosting::deserializeTrees(FILE *fp) {
       for (int k = 0; k < n_F_2; k++) {
         fread(&F_record[i][j][k], sizeof(F_record[i][j][k]), 1, fp);
       }
+      if (F_record[i][j].size() != data->n_data) F_record[i][j].resize(data->n_data);
     }
   }
 
+  int n_data = data->n_data;
   for (int i = 0; i < M; ++i){
     int n_hess_resi = 0;
     fread(&n_hess_resi, sizeof(n_hess_resi), 1, fp);
-    std::vector<double> hessians_temp(n_hess_resi), residuals_temp(n_hess_resi);
+    int prev_n_data = n_hess_resi/K;
+    std::vector<double> hessians_temp(K*n_data), residuals_temp(K*n_data);
     for (int j = 0; j < n_hess_resi; j++) {
-      fread(&hessians_temp[j], sizeof(hessians_temp[j]), 1, fp);
+      int k = j/prev_n_data;
+      int idx = k*n_data + j - k*prev_n_data;
+      if (idx >= K * n_data) idx = 0;
+      fread(&hessians_temp[idx], sizeof(hessians_temp[idx]), 1, fp);
     }
     for (int j = 0; j < n_hess_resi; j++) {
-      fread(&residuals_temp[j], sizeof(residuals_temp[j]), 1, fp);
+      int k = j/prev_n_data;
+      int idx = k*n_data + j - k*prev_n_data;
+      if (idx >= K * n_data) idx = 0;
+      fread(&residuals_temp[idx], sizeof(residuals_temp[idx]), 1, fp);
     }
-    if (n_hess_resi != 0) residuals_record.emplace_back(residuals_temp);
-    if (n_hess_resi != 0) hessians_record.emplace_back(hessians_temp);
+    if (n_hess_resi != 0) {
+      residuals_record.emplace_back(residuals_temp);
+    }
+    if (n_hess_resi != 0) {
+      hessians_record.emplace_back(hessians_temp);
+    }
     for (int j = 0; j < K; ++j) {
       if(i >= config->model_n_iterations){
         auto dummy_tree = std::unique_ptr<Tree>(new Tree(data, config));

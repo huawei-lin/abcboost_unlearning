@@ -78,6 +78,7 @@ class Tree {
   // ids stores the instance indices for each node
   std::vector<uint> ids;
   std::vector<uint> unids;
+  std::vector<uint> tune_ids;
   uint* ids_tmp;
   double* H_tmp;
   double* R_tmp;
@@ -103,11 +104,15 @@ class Tree {
 
   virtual void binSort(int x, int sib);
   virtual void unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
+  virtual void tuneBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void deleteIds();
+  void insertIds();
   void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
+  void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+                   std::vector<uint> *tune_ids_ptr);
 
   void updateFeatureImportance(int iter);
 
@@ -147,6 +152,7 @@ class Tree {
   void saveTree(FILE *fileptr);
 
   void splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l);
+  void splitIds(std::vector<std::pair<uint, uint>>& range, int x, int l, std::vector<uint>& ids);
   void split(int x, int l);
 
   void trySplit(int x, int sib);

@@ -41,6 +41,7 @@ Data::Data(Config* config) {
   this->config = config;
   data_header.n_feats = (config->data_is_matrix) ? 0 : config->data_n_feats;
   n_data = data_header.n_classes = 0;
+  Xi_offset = 0;
 }
 
 /**
@@ -79,8 +80,10 @@ void Data::loadRankQuery() {
  * Load data from the data path.
  * @param[in] fileptr: Pointer to the FILE object
  */
-void Data::loadData(bool from_scratch) {
-  std::vector<std::string> all_files = Config::split(config->data_path);
+void Data::loadData(bool from_scratch, std::string data_path) {
+  if (data_path.empty()) data_path = config->data_path;
+
+  std::vector<std::string> all_files = Config::split(data_path);
   for(auto p : all_files){
     if (!doesFileExist(p) && config->from_wrapper == false) {
       fprintf(stderr, "[ERROR] Data file (%s) does not exist!\n",p.c_str());
@@ -109,7 +112,7 @@ void Data::loadData(bool from_scratch) {
       is_matrix[i] = testDataIsMatrix(all_files[i]);
     }
     if(all_files.size() == 0){
-      printf("[Error] no valid data found in -data (%s)\n",config->data_path.c_str());
+      printf("[Error] no valid data found in -data (%s)\n",data_path.c_str());
       exit(1);
     }
     for(int i = 1;i < is_matrix.size();++i){
@@ -120,9 +123,9 @@ void Data::loadData(bool from_scratch) {
     }
     config->data_is_matrix = is_matrix[0];
     if (config->data_is_matrix) {
-      loadMatrixFormat(config->data_path);
+      loadMatrixFormat(data_path);
     } else {
-      loadLibsvmFormat(config->data_path);
+      loadLibsvmFormat(data_path);
     }
   }
 
@@ -136,10 +139,15 @@ void Data::loadData(bool from_scratch) {
 	
 	bool is_created_quantization = false;
 
-	if (config->no_map == true){
-		load();
+  if (config->model_mode == "tune" && Xi_offset != 0) {
+    tune_ids.resize(n_data - Xi_offset);
+    std::iota(tune_ids.begin(), tune_ids.end(), Xi_offset);
+  }
+
+  if (config->no_map == true){
+    load();
     printf("-- skip adaptive quantization, using truncated raw data.\n");
-	}else if (from_scratch == false) {
+  } else if (from_scratch == false) {
     load();
     printf("-- finish loading adaptive quantization in %.4f seconds.\n",
            timer.get_time_restart());
@@ -153,6 +161,12 @@ void Data::loadData(bool from_scratch) {
   } else {
     printf("[Error] No .map file found in test!\n");
     exit(1);
+  }
+
+  if (config->model_mode == "tune" && tune_ids.empty() == true) {
+    Xi_offset = n_data;
+    printf("Finish loading original data in %.4f seconds.\n\n", timer_all.get_time());
+    return;
   }
 
   restoreDenseFeatures();
@@ -774,7 +788,7 @@ void Data::loadMatrixFormat(std::string path) {
           v_global[t].resize(n_feats_local);
         }
         if (j_val != 0) {
-          i_global[t][j - 1].push_back(i);
+          i_global[t][j - 1].push_back(i + Xi_offset);
           v_global[t][j - 1].push_back(j_val);
         }
         j++;
@@ -885,7 +899,7 @@ void Data::loadLibsvmFormat(std::string path) {
             one_based_warning = true;
             continue;
           }
-          i_global[t][j - 1].push_back(i);
+          i_global[t][j - 1].push_back(i + Xi_offset);
           v_global[t][j - 1].push_back(j_val);
         }
       }

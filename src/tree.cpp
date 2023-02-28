@@ -452,6 +452,142 @@ void Tree::unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint
   }
 }
 
+void Tree::tuneBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids) {
+  if (end - start <= 0) return;
+  const auto* H = hessian;
+  const auto* R = residual;
+  uint fsz = fids->size();
+
+  if (sib == -1) {
+    if(!(start == 0 && end == data->n_data)){
+      alignHessianResidual(start,end, hessian, residual, ids);
+    }
+
+    double r_unobserved = 0.0;
+    double h_unobserved = 0.0;
+    int c_unobserved = 0;
+    initUnobserved(start,end,c_unobserved,r_unobserved,h_unobserved,ids);
+
+    setInLeaf<true>(start,end,ids);
+
+    CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(guided),
+      config->use_omp == 1,
+    for (int j = 0; j < fsz; ++j) {
+      int fid = (data->valid_fi)[(*fids)[j]];
+      auto &b_csw = (*hist)[x][fid];
+      if(data->auxDataWidth[fid] == 0){
+        std::vector<data_quantized_t> &fv = (data->Xv)[fid];
+        if (data->dense_f[fid]) {
+          if(start == 0 && end == data->n_data){
+            for(uint i = start;i < end;++i){
+              auto bin_id = fv[i];
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R[i];
+              b_csw[bin_id].weight += is_weighted ? H[i] : 1;
+            }
+          }else{
+            for(uint i = start;i < end;++i){
+              auto bin_id = fv[ids[i]];
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R_tmp[i];
+              b_csw[bin_id].weight += is_weighted ? H_tmp[i] : 1;
+            }
+          }
+        } else {
+          std::vector<uint> &fi = (data->Xi)[fid];
+          ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+
+          // The following parallel for only works when fsz is very small
+          // Remember to disable the outer parallel for before enable it, otherwise you will need to enable nested parallel for
+          // #pragma omp parallel for schedule(static,1) reduction(vec_csw_plus:b_csw) if (fi.size() > 65536 * 8)
+          for(int i = 0;i < fi.size();++i){
+            if(in_leaf[fi[i]] == true){
+              auto bin_id = fv[i];
+              auto id = fi[i];
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R[id];
+              b_csw[bin_id].weight += is_weighted ? H[id] : 1;
+
+              b_csw[j_unobserved].sum -= R[id];
+              b_csw[j_unobserved].count -= 1;
+              b_csw[j_unobserved].weight -= is_weighted ? H[id] : 1;
+            }
+          }
+          b_csw[j_unobserved].count += c_unobserved;
+          b_csw[j_unobserved].sum += r_unobserved;
+          b_csw[j_unobserved].weight += is_weighted ? h_unobserved : c_unobserved;
+        }
+      }else{
+        std::vector<uint8_t> &fv = (data->auxData)[fid];
+        if (data->dense_f[fid]) {
+          if(start == 0 && end == data->n_data){
+            for(uint i = start;i < end;++i){
+              auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R[i];
+              b_csw[bin_id].weight += is_weighted ? H[i] : 1;
+            }
+          }else{
+            for(uint i = start;i < end;++i){
+              auto bin_id = (fv[ids[i] >> 1] >> ((ids[i] & 1) << 2)) & 15;
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R_tmp[i];
+              b_csw[bin_id].weight += is_weighted ? H_tmp[i] : 1;
+            }
+          }
+        } else {
+          std::vector<uint> &fi = (data->Xi)[fid];
+          ushort j_unobserved = (data->data_header.unobserved_fv)[fid];
+
+          // The following parallel for only works when fsz is very small
+          // Remember to disable the outer parallel for before enable it, otherwise you will need to enable nested parallel for
+          // #pragma omp parallel for schedule(static,1) reduction(vec_csw_plus:b_csw) if (fi.size() > 65536 * 8)
+          for(int i = 0;i < fi.size();++i){
+            if(in_leaf[fi[i]] == true){
+              auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
+              auto id = fi[i];
+              b_csw[bin_id].count += 1;
+              b_csw[bin_id].sum += R[id];
+              b_csw[bin_id].weight += is_weighted ? H[id] : 1;
+
+              b_csw[j_unobserved].sum -= R[id];
+              b_csw[j_unobserved].count -= 1;
+              b_csw[j_unobserved].weight -= is_weighted ? H[id] : 1;
+            }
+          }
+          b_csw[j_unobserved].count += c_unobserved;
+          b_csw[j_unobserved].sum += r_unobserved;
+          b_csw[j_unobserved].weight += is_weighted ? h_unobserved : c_unobserved;
+        }
+      }
+    }
+    )
+
+    setInLeaf<false>(start,end,ids);
+
+  } else {
+    CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(guided),
+      config->use_omp == true,
+      for (int j = 0; j < fsz; ++j) {
+        uint fid = (data->valid_fi)[(*fids)[j]];
+        std::vector<HistBin> &b_csw = (*hist)[x][fid];
+        int parent = nodes[x].parent;
+        std::vector<HistBin> &pb_csw =
+            (*hist)[parent][fid];
+        std::vector<HistBin> &sb_csw = (*hist)[sib][fid];
+        for (int k = 0; k < b_csw.size(); ++k) {
+          b_csw[k].count = pb_csw[k].count - sb_csw[k].count;
+          b_csw[k].sum = pb_csw[k].sum - sb_csw[k].sum;
+          b_csw[k].weight =
+              std::max((hist_t).0, pb_csw[k].weight - sb_csw[k].weight);
+        }
+      }
+    )
+  }
+}
+
 /**
  * Fit a decision tree to pseudo residuals which partitions the input space
  * into J disjoint regions and predicts a constant value for each region.
@@ -637,6 +773,58 @@ void Tree::deleteIds() {
   ids.resize(last_ptr);
 }
 
+void Tree::insertIds() {
+  std::map<int, std::vector<int*>> split_ptr;
+  std::vector<uint> split_ids, leaf_ids;
+
+  for (auto node : nodes) {
+    if (node.idx != -1 && node.is_leaf == true) leaf_ids.emplace_back(node.idx);
+  }
+
+  int leaf_num = leaf_ids.size();
+  int split_num = leaf_num + 1;
+  split_ids.reserve(split_num);
+
+  for (int i = 0; i < nodes.size(); i++) {
+    if (nodes[i].start == -1 || nodes[i].end == -1) continue;
+    split_ptr[nodes[i].start].push_back(&nodes[i].start);
+    split_ptr[nodes[i].end].push_back(&nodes[i].end);
+  }
+  // for (auto p : split_ptr) split_ids.emplace_back(p.first);
+
+  std::vector<int> offsets(leaf_num);
+  std::vector<uint> ids_new;
+  std::vector<std::pair<int, int>> leaf_ids_sort(leaf_num); // first: split_num, second: leaf_ids's id
+
+  for (int i = 0; i < leaf_num; i++) {
+    int leaf_id = leaf_ids[i];
+    offsets[i] = range[leaf_id].second - range[leaf_id].first;
+    leaf_ids_sort[i].first = nodes[leaf_id].end;
+    leaf_ids_sort[i].second = i;
+  }
+  std::sort(leaf_ids_sort.begin(), leaf_ids_sort.end());
+
+  for (int i = 0; i < leaf_num; i++) {
+    int leaf_ids_id = leaf_ids_sort[i].second;
+    int leaf_id = leaf_ids[leaf_ids_id];
+    ids_new.insert(ids_new.end(), \
+            ids.begin() + nodes[leaf_id].start, \
+            ids.begin() + nodes[leaf_id].end);
+    ids_new.insert(ids_new.end(), \
+            tune_ids.begin() + range[leaf_id].first, \
+            tune_ids.begin() + range[leaf_id].second);
+  }
+
+  int total_offset = 0;
+  for (int i = 0; i < leaf_num; i++) {
+    int leaf_ids_id = leaf_ids_sort[i].second;
+    int leaf_id = leaf_ids[leaf_ids_id];
+    total_offset += offsets[leaf_ids_id];
+    for (int* e : split_ptr[leaf_ids_sort[i].first]) *e += total_offset;
+  }
+  ids = ids_new;
+}
+
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
                        std::vector<uint> *unids_ptr) {
 
@@ -750,6 +938,173 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       retrain_subtrees.emplace_back(retrain_ids);
     } else {
       splitUnids(range, i, nodes[i].left);
+    }
+  }
+
+  uint lsz, rsz, msz = config->tree_min_node_size;
+  int l, r;
+  for (std::vector<uint> &retrain_ids : retrain_subtrees) {
+    int root = retrain_ids[0], n_iter = retrain_ids.size();
+    trySplit(root, -1);
+    for (int i = 1; i < n_iter; i += 2) {
+      int idx = -1;
+      double max_gain = -1;
+      for (int j = 0; j < i; ++j) {
+        if (nodes[retrain_ids[j]].is_leaf && nodes[retrain_ids[j]].gain > max_gain) {
+          idx = retrain_ids[j];
+          max_gain = nodes[retrain_ids[j]].gain;
+        }
+      }
+      l = retrain_ids[i];
+      r = retrain_ids[i + 1];
+      if (idx == -1) {
+//        fprintf(stderr, "[INFO] cannot split further.\n");
+        break;
+      }
+      split(idx, l);
+      nodes[l].has_retrain = true;
+      nodes[r].has_retrain = true;
+      lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
+      if (lsz < msz && rsz < msz) {
+//         fprintf(stderr,
+//                 "[WARNING] Split is cancelled because of min node size!\n");
+        continue;
+      }
+
+      // if(i + 1 < n_iter){
+      if(i < n_iter){
+        if (lsz < rsz) {
+          trySplit(l, -1);
+          //trySplit(r, -1); is replaced by the subtraction
+          trySplit(r, l);
+        } else {
+          trySplit(r, -1);
+          //trySplit(l, -1);
+          trySplit(l, r);
+        }
+      }
+    }
+  }
+
+  hist_record = *hist;
+  regress(range);
+  in_leaf.resize(0);
+  in_leaf.shrink_to_fit();
+}
+
+void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
+                       std::vector<uint> *tune_ids_ptr) {
+  this->tune_ids = (*(std::vector<uint> *)tune_ids_ptr);
+  this->fids = fids;
+  in_leaf.resize(data->Y.size());
+  fids_record = (*(std::vector<uint> *)fids);
+
+  dense_fids.reserve(fids->size());
+  sparse_fids.reserve(fids->size());
+  for(int j = 0;j < fids->size();++j){
+    int fid = (data->valid_fi)[(*fids)[j]];
+    if(data->dense_f[fid])
+      dense_fids.push_back(fid);
+    else
+      sparse_fids.push_back(fid);
+  }
+
+  int n_nodes = nodes.size();
+  std::vector<std::vector<uint>> retrain_subtrees;
+  range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
+  range[0] = std::make_pair(0, (this->tune_ids).size());
+
+#pragma omp parallel for
+  for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
+  for (uint i = 0; i < n_nodes; i++) {
+    if (nodes[i].is_leaf == false && nodes[i].idx >= 0) splitIds(range, i, nodes[i].left, tune_ids);
+  }
+  insertIds();
+
+  for (uint i = 0; i < n_nodes; i++) {
+    auto& node = nodes[i];
+    if (nodes[i].allow_build_subtree == true || nodes[i].idx < 0) continue;
+
+    if (i == 0 || nodes[nodes[i].parent].is_random_node == true) {
+      tuneBinSort(i, -1, range[i].first, range[i].second, tune_ids);
+    } else if (i%2 == 1) {
+      int lsz = nodes[i].end - nodes[i].start;
+      int rsz = nodes[i + 1].end - nodes[i + 1].start;
+      if (lsz <= rsz) {
+        tuneBinSort(i, -1, range[i].first, range[i].second, tune_ids);
+        if (range[i + 1].second - range[i + 1].first < config->data_max_n_bins) {
+          tuneBinSort(i + 1, -1, range[i + 1].first, range[i + 1].second, tune_ids);
+        } else {
+          tuneBinSort(i + 1, i, range[i + 1].first, range[i + 1].second, tune_ids);
+        }
+      } else {
+        tuneBinSort(i + 1, -1, range[i + 1].first, range[i + 1].second, tune_ids);
+        if (range[i].second - range[i].first < config->data_max_n_bins) {
+          tuneBinSort(i, -1, range[i].first, range[i].second, tune_ids);
+        } else {
+          tuneBinSort(i, i + 1, range[i].first, range[i].second, tune_ids);
+        }
+      }
+    }
+    if (nodes[i].is_random_node == true) continue;
+
+    std::vector<SplitInfo> &splits = nodes[i].gains;
+    std::vector<int> offsets(fids->size());
+    int cnt = 0, splits_size = splits.size();
+    for (int i = 1; i < splits_size; i++) {
+      if (splits[i].split_fi != splits[i - 1].split_fi) offsets[cnt++] = i;
+    }
+    offsets[cnt] = splits_size;
+
+    CONDITION_OMP_PARALLEL_FOR(
+      omp parallel for schedule(static, 1),
+      config->use_omp == true,
+      for (int j = 0; j < fids->size(); j++) {
+        int gains_start = (j == 0?0:offsets[j - 1]), gains_end = offsets[j];
+        int unids_start = range[i].first, unids_end = range[i].second;
+        int fid = (data->valid_fi)[(*fids)[j]];
+
+        featureGain(i, fid, splits, gains_start, gains_end, tune_ids, unids_start, unids_end);
+      }
+    )
+
+    int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
+    double best_gain = -1;
+    for (int j = 0; j < splits.size(); j++) {
+      auto &info = nodes[i].gains[j];
+      if (info.gain > best_gain) {
+        best_gain = info.gain;
+        best_fi = info.split_fi;
+        best_v = info.split_v;
+      }
+      nodes[i].gain = best_gain;
+    }
+    if (nodes[i].is_leaf == true) continue;
+
+    if (!(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
+      std::vector<uint> retrain_ids;
+      std::queue<uint> q;
+      q.push(i);
+      std::sort((this->ids).begin() + nodes[i].start, (this->ids).begin() + nodes[i].end);
+      while (!q.empty()) {
+        uint cur_id = q.front();
+        q.pop();
+        if (cur_id == -1) continue;
+        nodes[cur_id].allow_build_subtree = true;
+        retrain_ids.push_back(cur_id);
+        int n_feats = data->data_header.n_feats, hist_size;
+        for (uint j = 0; j < n_feats; ++j) {
+          memset((*hist)[cur_id][j].data(), 0, sizeof(HistBin) * (*hist)[cur_id][j].size());
+        }
+        if (nodes[cur_id].is_leaf == false && nodes[cur_id].left != -1) q.push(nodes[cur_id].left);
+        if (nodes[cur_id].is_leaf == false && nodes[cur_id].right != -1) q.push(nodes[cur_id].right);
+
+        if (cur_id != i) nodes[cur_id] = TreeNode();
+        else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
+      }
+      retrain_subtrees.emplace_back(retrain_ids);
+    } else {
+      ;
     }
   }
 
@@ -994,8 +1349,14 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
 
       double new_gain = -1;
       if (l_w != delta_l_w && r_w != delta_r_w) {
-        double new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
-        double new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
+        double new_l_s = 0, new_r_s = 0, new_l_w = 0, new_r_w = 0;
+        if (config->model_mode == "unlearn") {
+          new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
+          new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
+        } else if (config->model_mode == "tune") {
+          new_l_s = l_s + delta_l_s, new_r_s = r_s + delta_r_s;
+          new_l_w = l_w + delta_l_w, new_r_w = r_w + delta_r_w;
+        }
 
         new_gain = new_l_s/new_l_w * new_l_s + new_r_s/new_r_w * new_r_s;
         new_gain -= (new_l_s + new_r_s)/(new_l_w + new_r_w) * (new_l_s + new_r_s);
@@ -1152,7 +1513,7 @@ void Tree::init(
                 double* H_tmp,
                 double* R_tmp) {
   this->hist = hist;
-  if (hist == nullptr && config->model_mode == "unlearn") {
+  if (hist == nullptr && (config->model_mode == "unlearn" || config->model_mode == "tune")) {
     this->hist = &hist_record;
   }
   this->l_buffer = l_buffer;
@@ -1557,6 +1918,111 @@ void Tree::splitUnids(std::vector<std::pair<uint, uint>>& range, int x, int l) {
   range[l + 1].first = li;
   range[l + 1].second = pend;
 }
+
+void Tree::splitIds(std::vector<std::pair<uint, uint>>& range, int x, int l, std::vector<uint>& ids) {
+  if (x < 0) return;
+  uint pstart = range[x].first;
+  uint pend = range[x].second;
+  uint n_ids = pend - pstart;
+  if (n_ids <= 0) {
+    range[l].first = pstart;
+    range[l].second = pstart;
+    range[l + 1].first = pstart;
+    range[l + 1].second = pstart;
+    return;
+  }
+
+  int split_v = nodes[x].split_v;
+  uint fid = nodes[x].split_fi, li = pstart, ri = 0;
+  std::vector<data_quantized_t> &fv = (data->Xv)[fid];
+  std::vector<uint> ids_tmp_v(data->n_data);
+  uint *ids_tmp = ids_tmp_v.data();
+
+  if ((data->dense_f)[fid]) {
+    if (config->use_omp && n_ids > n_threads && n_threads > 1) {
+      uint buffer_sz = (n_ids + n_threads - 1) / n_threads;
+      std::vector<int> left_is(n_threads, 0), right_is(n_threads, 0);
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1) reduction(+ : li),
+        config->use_omp == true,
+        for (int t = 0; t < n_threads; ++t) {
+          uint left_i = 0, right_i = 0;
+          uint start = pstart + t * buffer_sz, end = start + buffer_sz;
+          if (end > pend) end = pend;
+          for (uint j = start; j < end; ++j) {
+            uint id = ids[j];
+            if (fv[id] <= split_v)
+              (*l_buffer)[t][left_i++] = id;
+            else
+              (*r_buffer)[t][right_i++] = id;
+          }
+
+          left_is[t] = left_i;
+          right_is[t] = right_i;
+          li += left_i;
+        }
+      )
+
+      std::vector<uint> left_sum(n_threads, 0), right_sum(n_threads, 0);
+      for (int t = 1; t < n_threads; ++t) {
+        left_sum[t] = left_sum[t - 1] + left_is[t - 1];
+        right_sum[t] = right_sum[t - 1] + right_is[t - 1];
+      }
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1),
+        config->use_omp == true,
+        for (int t = 0; t < n_threads; ++t) {
+          std::move((*l_buffer)[t].begin(), (*l_buffer)[t].begin() + left_is[t],
+                    ids.begin() + pstart + left_sum[t]);
+          std::move((*r_buffer)[t].begin(), (*r_buffer)[t].begin() + right_is[t],
+                    ids.begin() + li + right_sum[t]);
+        }
+      )
+    } else {
+      for (uint i = pstart; i < pend; ++i) {
+        if(fv[ids[i]] <= split_v){
+          ids[li] = ids[i];
+          ++li;
+        }else{
+          ids_tmp[ri] = ids[i];
+          ++ri;
+        }
+      }
+      std::copy(ids_tmp, ids_tmp + ri, ids.begin() + li);
+    }
+  } else {
+    int idx = 0;
+    std::vector<uint> &fi = (data->Xi)[fid];
+    int best_fsz = fi.size() - 1;
+    ushort v, unobserved = (data->data_header.unobserved_fv)[fid];
+
+    if (best_fsz >= 0) {
+      for (uint i = pstart; i < pend; ++i) {
+        uint id = ids[i];
+        while (idx < best_fsz && fi[idx] < id) {
+          ++idx;
+        }
+        v = (id == fi[idx]) ? fv[idx] : unobserved;
+        if (v <= split_v) {
+          ids[li++] = id;
+        } else {
+          ids_tmp[ri++] = id;
+        }
+      }
+      std::copy(ids_tmp, ids_tmp + ri, ids.begin() + li);
+    }
+  }
+
+  if (!(data->dense_f)[fid] && data->Xi[fid].size() <= 0) {
+    li = ((data->data_header.unobserved_fv)[fid] <= split_v) ? pend : pstart;
+  }
+  range[l].first = pstart;
+  range[l].second = li;
+  range[l + 1].first = li;
+  range[l + 1].second = pend;
+}
+
+
 
 /**
  * Partition instances at a node into its left and right child.
