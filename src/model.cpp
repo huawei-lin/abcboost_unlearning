@@ -514,6 +514,29 @@ void GradientBoosting::saveModel(int iter) {
 }
 
 /**
+ * Save model.
+ */
+void GradientBoosting::saveData() {
+  std::string data_suffix = ".csv";
+  if(config->model_mode == "unlearn") {
+    data_suffix = "_unlearn" + data_suffix;
+  }
+  if(config->model_mode == "tune") {
+    data_suffix = "_tune" + data_suffix;
+  }
+  FILE *data_out =
+      fopen((experiment_path + data_suffix).c_str(), "wb");
+  if (data_out == NULL) {
+    fprintf(stderr, "[ERROR] Cannot create file: (%s)\n",
+            (experiment_path + data_suffix).c_str());
+    exit(1);
+  }
+  data->dumpData(data_out, "csv");
+  fclose(data_out);
+  return;
+}
+
+/**
  * Helper method to setup files to save log information and the model.
  */
 void GradientBoosting::setupExperiment() {
@@ -533,7 +556,11 @@ void GradientBoosting::setupExperiment() {
     }
   }
   std::ostringstream sstream;
-  sstream << config->experiment_folder << data_name << "_" << config->model_name;
+  if (config->task_name.empty() == true) {
+    sstream << config->experiment_folder << data_name << "_" << config->model_name;
+  } else {
+    sstream << config->experiment_folder << config->task_name << "_" << config->model_name;
+  }
   if(config->model_name == "abcmart" || config->model_name == "abcrobustlogit"){
     sstream << config->base_candidates_size << "g" << config->model_gap;
     if(config->abc_sample_rate != 1)
@@ -550,7 +577,6 @@ void GradientBoosting::setupExperiment() {
     }
     sstream << "_p" << config->regression_lp_loss;
   }
-
   experiment_path = sstream.str();
   config->formatted_output_name = experiment_path;
 
@@ -1330,6 +1356,7 @@ void Mart::train() {
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
   if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_model) saveData();
 
   if (config->save_importance) getTopFeatures();
 
@@ -1400,6 +1427,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
   if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_model) saveData();
 
   if (config->save_importance) getTopFeatures();
 
@@ -1468,6 +1496,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
   if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_model) saveData();
 
   if (config->save_importance) getTopFeatures();
 

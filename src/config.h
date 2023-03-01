@@ -132,6 +132,7 @@ class Config {
   double gbrank_tau = 0.1;
   double gbrank_update_factor = 100;
   std::string map_dump_format = "";
+  std::string task_name = "";
   int lazy_update_freq = 1;
 
   // Rank Query File
@@ -202,6 +203,8 @@ class Config {
     fwrite(&tree_damping_factor, sizeof(double), 1, fp);
     fwrite(&tree_max_n_leaves, sizeof(int), 1, fp);
     fwrite(&tree_min_node_size, sizeof(int), 1, fp);
+    fwrite(&tree_n_random_layers, sizeof(int), 1, fp);
+    fwrite(&feature_split_sample_rate, sizeof(double), 1, fp);
 
     // Model config
     fwrite(&model_is_regression, sizeof(bool), 1, fp);
@@ -282,6 +285,8 @@ class Config {
     ret += fread(&tree_damping_factor, sizeof(double), 1, fp);
     ret += fread(&tree_max_n_leaves, sizeof(int), 1, fp);
     ret += fread(&tree_min_node_size, sizeof(int), 1, fp);
+    ret += fread(&tree_n_random_layers, sizeof(int), 1, fp);
+    ret += fread(&feature_split_sample_rate, sizeof(double), 1, fp);
 
     // Model config
     ret += fread(&model_is_regression, sizeof(bool), 1, fp);
@@ -607,6 +612,8 @@ class Config {
         gbrank_update_factor = stod(value);
       } else if (key == "map_dump_format" || key == "dump") {
         map_dump_format = value;
+      } else if (key == "task_name") {
+        task_name = value;
       } else if (key == "lazy_update_freq") {
         lazy_update_freq = stoi(value);
       } else if (key == "model_warmup_iter" || key == "warmup_iter") {
