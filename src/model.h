@@ -60,7 +60,7 @@ class GradientBoosting {
   std::vector<std::vector<std::vector<double>>> F_record;
   std::vector<std::vector<double>> hessians_record, residuals_record;
   std::vector<double> feature_importance;
-  std::vector<unsigned int> ids, fids;
+  std::vector<unsigned int> ids, fids, unids;
   std::vector<std::vector<unsigned int>> fids_record;
   std::string experiment_path;
 
@@ -101,9 +101,10 @@ class GradientBoosting {
   void zeroBins();
 
   virtual int loadModel();
-  void deleteIds(std::vector<unsigned int>& unids);
+  void deleteIds(std::vector<uint>& unids, std::vector<uint>& ids2ids);
+  void alignIdsAfterUnlearning(std::vector<uint>& ids2ids);
   virtual void saveModel(int iter);
-  virtual void saveData();
+  virtual void saveData(std::vector<uint>* unids_ptr = nullptr);
   virtual void test();
   virtual void train();
   virtual void unlearn(std::vector<uint>& unidxs);

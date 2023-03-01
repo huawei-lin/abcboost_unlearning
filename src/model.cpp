@@ -516,7 +516,7 @@ void GradientBoosting::saveModel(int iter) {
 /**
  * Save model.
  */
-void GradientBoosting::saveData() {
+void GradientBoosting::saveData(std::vector<uint>* unids_ptr) {
   std::string data_suffix = ".csv";
   if(config->model_mode == "unlearn") {
     data_suffix = "_unlearn" + data_suffix;
@@ -531,7 +531,11 @@ void GradientBoosting::saveData() {
             (experiment_path + data_suffix).c_str());
     exit(1);
   }
-  data->dumpData(data_out, "csv");
+  if (unids_ptr != nullptr) {
+    data->dumpCSV(data_out, *unids_ptr);
+  } else {
+    data->dumpData(data_out, "csv");
+  }
   fclose(data_out);
   return;
 }
@@ -1363,11 +1367,13 @@ void Mart::train() {
 }
 
 void Mart::unlearn(std::vector<unsigned int>& unids) {
+  this->unids = unids;
   // set up buffers for OpenMP
   std::vector<std::vector<std::vector<unsigned int>>> buffer =
       GradientBoosting::initBuffer();
+  std::vector<unsigned int> ids2ids(ids.size());
 
-  deleteIds(unids);
+  deleteIds(unids, ids2ids);
 
   // build one tree if it is binary prediction
   // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
@@ -1425,9 +1431,10 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 //     }
   }
   printf("Training has taken %.5f seconds\n", t2.get_time());
+  alignIdsAfterUnlearning(ids2ids);
 
   if (config->save_model) saveModel(config->model_n_iterations);
-  if (config->save_model) saveData();
+  if (config->save_model) saveData(&unids);
 
   if (config->save_importance) getTopFeatures();
 
@@ -1555,20 +1562,44 @@ int GradientBoosting::loadModel() {
   return 0;
 }
 
-void GradientBoosting::deleteIds(std::vector<uint>& unids) {
+void GradientBoosting::deleteIds(std::vector<uint>& unids, std::vector<uint>& ids2ids) {
+  ids2ids.resize(ids.size());
   int len_unids = unids.size(), j = 0, cnt = 0;
   for (int i = 0; i < ids.size(); i++) {
     if (j < len_unids && ids[i] == unids[j]) {
       j++;
     } else {
       ids[cnt] = ids[i];
+      ids2ids[i] = cnt;
       cnt++;
     }
   }
   ids.resize(cnt);
 }
 
+void GradientBoosting::alignIdsAfterUnlearning(std::vector<uint>& ids2ids) {
+  int M = config->model_n_iterations;
+  int K = M > 0 ? additive_trees[0].size() : 0;
+  for (auto& id : ids) {
+    id = ids2ids[id];
+  }
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < K; ++j) {
+      if (additive_trees[i][j] == nullptr) {
+        continue;
+      }
+      for (auto& id : additive_trees[i][j]->ids) {
+        id = ids2ids[id];
+      }
+    }
+  }
+}
+
 void GradientBoosting::serializeTrees(FILE *fp, int M) {
+  int n_data = data->n_data, n_ids = ids.size(); // n_ids = n_data - n_unidss
+  std::vector<bool> invalid(n_data);
+  for (auto& unid : unids) invalid[unid] = true;
+
   int K = M > 0 ? additive_trees[0].size() : 0;
   Utils::serialize(fp, M);
   Utils::serialize(fp, K);
@@ -1589,24 +1620,26 @@ void GradientBoosting::serializeTrees(FILE *fp, int M) {
   int n_F = F_record.size();
   int n_F_1 = data->data_header.n_classes;
   int n_F_2 = data->n_data;
+  int n_F_2_new = n_ids;
   fwrite(&n_F, sizeof(n_F), 1, fp);
   fwrite(&n_F_1, sizeof(n_F_1), 1, fp);
-  fwrite(&n_F_2, sizeof(n_F_2), 1, fp);
+  fwrite(&n_F_2_new, sizeof(n_F_2), 1, fp);
   for (int i = 0; i < n_F; i++) {
-    for (int j = 0; j < n_F_1; j++) {
-      for (int k = 0; k < n_F_2; k++) {
-        fwrite(&F_record[i][j][k], sizeof(F_record[i][j][k]), 1, fp);
+    for (int j = 0; j < n_F_1; j++) { // len: class
+      for (int k = 0; k < n_F_2; k++) { // len: n_data
+        if (!invalid[k]) fwrite(&F_record[i][j][k], sizeof(F_record[i][j][k]), 1, fp);
       }
     }
   }
   for (int i = 0; i < M; ++i) {
-    int n_hess_resi = hessians_record.size() == 0?0:data->data_header.n_classes * data->n_data;
-    fwrite(&n_hess_resi, sizeof(n_hess_resi), 1, fp);
-    for (int j = 0; j < n_hess_resi; j++) {
-      fwrite(&hessians_record[i][j], sizeof(hessians_record[i][j]), 1, fp);
+    int n_hess_resi = hessians_record.size() == 0?0:data->data_header.n_classes * n_data;
+    int n_hess_resi_new = hessians_record.size() == 0?0:data->data_header.n_classes * n_ids;
+    fwrite(&n_hess_resi_new, sizeof(n_hess_resi_new), 1, fp);
+    for (int j = 0; j < n_hess_resi; j++) { // len: class * n_data
+      if (!invalid[j%n_data]) fwrite(&hessians_record[i][j], sizeof(hessians_record[i][j]), 1, fp);
     }
-    for (int j = 0; j < n_hess_resi; j++) {
-      fwrite(&residuals_record[i][j], sizeof(residuals_record[i][j]), 1, fp);
+    for (int j = 0; j < n_hess_resi; j++) { // len: class * n_data
+      if (!invalid[j%n_data]) fwrite(&residuals_record[i][j], sizeof(residuals_record[i][j]), 1, fp);
     }
     for (int j = 0; j < K; ++j) {
       if (additive_trees[i][j] == nullptr) {

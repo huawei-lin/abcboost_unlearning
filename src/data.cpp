@@ -284,6 +284,39 @@ void Data::dumpCSV(FILE* fileptr) {
   }
 }
 
+void Data::dumpCSV(FILE* fileptr, std::vector<unsigned int>& unids) {
+  if (unids.empty() == true) {
+    dumpCSV(fileptr);
+    return;
+  }
+  const auto n = Y.size();
+  const bool data_remap = data_header.idx2label.size() > 0;
+  const int n_feats = data_header.n_feats;
+  std::vector<unsigned int> indices =
+      std::vector<unsigned int>(n_feats, 0);
+  int val = 0;
+  int cur_idx = 0, n_unids = unids.size();
+  for (int i = 0; i < n; ++i) {
+    while (cur_idx < n_unids && unids[cur_idx] < i) cur_idx++;
+    bool valid_data = true;
+    if (cur_idx < n_unids && i == unids[cur_idx]) valid_data = false;
+
+    if (valid_data) fprintf(fileptr,"%g",data_remap ? data_header.idx2label[Y[i]] : Y[i]);
+    for (int j = 0;j < n_feats;++j){
+      if (Xv[j].size() == 0){
+        val = 0;
+      } else if (dense_f[j]) {
+        val = Xv[j][i];
+      } else {
+        val = (Xi[j][indices[j]] == i) ? Xv[j][indices[j]] : 0;
+        if (Xi[j][indices[j]] == i) ++indices[j];
+      }
+      if (valid_data) fprintf(fileptr,",%d", val);
+    }
+    if (valid_data) fprintf(fileptr,"\n");
+  }
+}
+
 void Data::loadDataHeader(FILE* fileptr) {
   fread(&data_header.n_feats, sizeof(unsigned int), 1, fileptr);
   fread(&data_header.n_classes, sizeof(unsigned int), 1, fileptr);

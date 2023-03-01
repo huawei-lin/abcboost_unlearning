@@ -175,6 +175,7 @@ class Data {
   void dumpData(FILE* fileptr, std::string format);
   void dumpLibsvm(FILE* fileptr);
   void dumpCSV(FILE* fileptr);
+  void dumpCSV(FILE* fileptr, std::vector<unsigned int>& unids);
   void loadRankQuery();
   bool doesFileExist(std::string path);
 
