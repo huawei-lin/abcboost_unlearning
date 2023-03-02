@@ -712,7 +712,7 @@ void Tree::deleteIds() {
 
   int leaf_num = 0;
   for (auto node : nodes) {
-    if (node.idx != -1 && node.is_leaf == true) leaf_num++;
+    if (node.idx != -1 && node.is_leaf == true && node.start != node.end) leaf_num++;
   }
 
   int split_num = leaf_num + 1;
@@ -739,7 +739,7 @@ void Tree::deleteIds() {
     left_it = ids.begin() + left;
     right_it = ids.begin() + right;
     for (uint unid : unids_tmp) {
-      target_it = std::lower_bound(left_it, right_it, unid);
+      target_it = std::lower_bound(left_it, right_it, unid); //
       if (target_it != right_it && *target_it == unid) {
         left_it = target_it;
         id_global[i].emplace_back(unid);
@@ -778,7 +778,9 @@ void Tree::insertIds() {
   std::vector<uint> split_ids, leaf_ids;
 
   for (auto node : nodes) {
-    if (node.idx != -1 && node.is_leaf == true) leaf_ids.emplace_back(node.idx);
+    if (node.idx != -1 && node.is_leaf == true && node.start != node.end) {
+      leaf_ids.emplace_back(node.idx);
+    }
   }
 
   int leaf_num = leaf_ids.size();
@@ -876,45 +878,55 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
       }
     }
-    if (nodes[i].is_random_node == true) {
-      if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
-      continue;
-    }
-
-    std::vector<SplitInfo> &splits = nodes[i].gains;
-    std::vector<int> offsets(fids->size());
-    int cnt = 0, splits_size = splits.size();
-    for (int i = 1; i < splits_size; i++) {
-      if (splits[i].split_fi != splits[i - 1].split_fi) offsets[cnt++] = i;
-    }
-    offsets[cnt] = splits_size;
-
-    CONDITION_OMP_PARALLEL_FOR(
-      omp parallel for schedule(static, 1),
-      config->use_omp == true,
-      for (int j = 0; j < fids->size(); j++) {
-        int gains_start = (j == 0?0:offsets[j - 1]), gains_end = offsets[j];
-        int unids_start = range[i].first, unids_end = range[i].second;
-        int fid = (data->valid_fi)[(*fids)[j]];
-
-        featureGain(i, fid, splits, gains_start, gains_end, unids, unids_start, unids_end);
-      }
-    )
+//     if (nodes[i].is_random_node == true) {
+//       if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
+//       continue;
+//     }
+    if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
     double best_gain = -1;
-    for (int j = 0; j < splits.size(); j++) {
-      auto &info = nodes[i].gains[j];
-      if (info.gain > best_gain) {
-        best_gain = info.gain;
-        best_fi = info.split_fi;
-        best_v = info.split_v;
-      }
-      nodes[i].gain = best_gain;
-    }
-    if (nodes[i].is_leaf == true) continue;
 
-    if (!(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
+    uint lsz, rsz, msz = config->tree_min_node_size;
+    uint l = nodes[i].left, r = nodes[i].right;
+    if (nodes[i].left != -1 && nodes[i].right != -1) {
+      lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
+    }
+    if (nodes[i].is_leaf || (lsz != 0 && rsz != 0)) {
+      if (nodes[i].is_random_node == true) continue;
+      std::vector<SplitInfo> &splits = nodes[i].gains;
+      std::vector<int> offsets(fids->size());
+      int cnt = 0, splits_size = splits.size();
+      for (int i = 1; i < splits_size; i++) {
+        if (splits[i].split_fi != splits[i - 1].split_fi) offsets[cnt++] = i;
+      }
+      offsets[cnt] = splits_size;
+
+      CONDITION_OMP_PARALLEL_FOR(
+        omp parallel for schedule(static, 1),
+        config->use_omp == true,
+        for (int j = 0; j < fids->size(); j++) {
+          int gains_start = (j == 0?0:offsets[j - 1]), gains_end = offsets[j];
+          int unids_start = range[i].first, unids_end = range[i].second;
+          int fid = (data->valid_fi)[(*fids)[j]];
+
+          featureGain(i, fid, splits, gains_start, gains_end, unids, unids_start, unids_end);
+        }
+      )
+
+      for (int j = 0; j < splits.size(); j++) {
+        auto &info = nodes[i].gains[j];
+        if (info.gain > best_gain) {
+          best_gain = info.gain;
+          best_fi = info.split_fi;
+          best_v = info.split_v;
+        }
+        nodes[i].gain = best_gain;
+      }
+      if (nodes[i].is_leaf == true) continue;
+    }
+
+    if (best_gain == -1 || !(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
       std::vector<uint> retrain_ids;
       std::queue<uint> q;
       q.push(i);
@@ -933,11 +945,17 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         if (nodes[cur_id].is_leaf == false && nodes[cur_id].right != -1) q.push(nodes[cur_id].right);
 
         if (cur_id != i) nodes[cur_id] = TreeNode();
-        else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
+        else {
+          auto& node = nodes[cur_id];
+          node.is_leaf = true; // set retrained root's leaf as true
+          node.gains.clear();
+          node.left = node.right = node.split_fi = node.split_v = node.gain = -1;
+        }
       }
+      std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
     } else {
-      splitUnids(range, i, nodes[i].left);
+      // splitUnids(range, i, nodes[i].left);
     }
   }
 
@@ -1110,45 +1128,57 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   uint lsz, rsz, msz = config->tree_min_node_size;
   int l, r;
-  for (std::vector<uint> &retrain_ids : retrain_subtrees) {
-    int root = retrain_ids[0], n_iter = retrain_ids.size();
-    trySplit(root, -1);
-    for (int i = 1; i < n_iter; i += 2) {
-      int idx = -1;
-      double max_gain = -1;
-      for (int j = 0; j < i; ++j) {
-        if (nodes[retrain_ids[j]].is_leaf && nodes[retrain_ids[j]].gain > max_gain) {
-          idx = retrain_ids[j];
-          max_gain = nodes[retrain_ids[j]].gain;
-        }
-      }
-      l = retrain_ids[i];
-      r = retrain_ids[i + 1];
-      if (idx == -1) {
-//        fprintf(stderr, "[INFO] cannot split further.\n");
-        break;
-      }
-      split(idx, l);
-      nodes[l].has_retrain = true;
-      nodes[r].has_retrain = true;
-      lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
-      if (lsz < msz && rsz < msz) {
-//         fprintf(stderr,
-//                 "[WARNING] Split is cancelled because of min node size!\n");
-        continue;
-      }
+  int root_num = retrain_subtrees.size();
+  std::vector<uint> retrain_ids(root_num);
+  for (int i = 0; i < root_num; i++) {
+    retrain_ids[i] = retrain_subtrees[i][0];
+    trySplit(retrain_ids[i], -1);
+  }
+  // merge all invalid node id
+  for (int i = 1; i < n_nodes; i += 2) {
+    if (nodes[i].idx == -1 && nodes[i + 1].idx == -1) {
+      retrain_ids.emplace_back(i);
+      retrain_ids.emplace_back(i + 1);
+    }
+  }
+  sort(retrain_ids.begin() + root_num, retrain_ids.end());
 
-      // if(i + 1 < n_iter){
-      if(i < n_iter){
-        if (lsz < rsz) {
-          trySplit(l, -1);
-          //trySplit(r, -1); is replaced by the subtraction
-          trySplit(r, l);
-        } else {
-          trySplit(r, -1);
-          //trySplit(l, -1);
-          trySplit(l, r);
-        }
+  int n_iter = retrain_ids.size();
+  for (int i = root_num; i < n_iter; i += 2) {
+    int idx = -1;
+    double max_gain = -1;
+    for (int j = 0; j < i; ++j) {
+      if (nodes[retrain_ids[j]].is_leaf && nodes[retrain_ids[j]].gain > max_gain) {
+        idx = retrain_ids[j];
+        max_gain = nodes[retrain_ids[j]].gain;
+      }
+    }
+    l = retrain_ids[i];
+    r = retrain_ids[i + 1];
+    if (idx == -1) {
+//      fprintf(stderr, "[INFO] cannot split further.\n");
+      break;
+    }
+    split(idx, l);
+    nodes[l].has_retrain = true;
+    nodes[r].has_retrain = true;
+    lsz = nodes[l].end - nodes[l].start, rsz = nodes[r].end - nodes[r].start;
+    if (lsz < msz && rsz < msz) {
+//       fprintf(stderr,
+//               "[WARNING] Split is cancelled because of min node size!\n");
+      continue;
+    }
+
+    // if(i + 1 < n_iter){
+    if(i < n_iter){
+      if (lsz < rsz) {
+        trySplit(l, -1);
+        //trySplit(r, -1); is replaced by the subtraction
+        trySplit(r, l);
+      } else {
+        trySplit(r, -1);
+        //trySplit(l, -1);
+        trySplit(l, r);
       }
     }
   }
@@ -1579,7 +1609,7 @@ void Tree::populateTree(FILE *fileptr) {
 
     // check whether a leaf
     if (node.idx < 0) {
-      node.is_leaf = false;
+      node.is_leaf = true;
     } else if (node.left == -1 && node.right == -1) {
       n_leafs++;
       leaf_ids.push_back(node.idx);
