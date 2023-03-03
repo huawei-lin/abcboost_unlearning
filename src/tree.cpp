@@ -948,7 +948,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         else {
           auto& node = nodes[cur_id];
           node.is_leaf = true; // set retrained root's leaf as true
-          node.gains.clear();
+          // node.gains.clear();
           node.left = node.right = node.split_fi = node.split_v = node.gain = -1;
         }
       }
@@ -1128,23 +1128,35 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   uint lsz, rsz, msz = config->tree_min_node_size;
   int l, r;
-  int root_num = retrain_subtrees.size();
-  std::vector<uint> retrain_ids(root_num);
-  for (int i = 0; i < root_num; i++) {
-    retrain_ids[i] = retrain_subtrees[i][0];
-    trySplit(retrain_ids[i], -1);
-  }
-  // merge all invalid node id
-  for (int i = 1; i < n_nodes; i += 2) {
-    if (nodes[i].idx == -1 && nodes[i + 1].idx == -1) {
+  int root_num = 0;
+  std::vector<bool> is_root(n_nodes);
+  std::vector<uint> retrain_ids;
+  for (int i = 0; i < n_nodes; i++) {
+    auto& node = nodes[i];
+    if (node.idx >= 0 && node.is_leaf) {
+      trySplit(node.idx, -1); // can be optimized
       retrain_ids.emplace_back(i);
-      retrain_ids.emplace_back(i + 1);
+      is_root[i] = true;
     }
   }
-  sort(retrain_ids.begin() + root_num, retrain_ids.end());
+  root_num = retrain_ids.size();
+
+  if (root_num != 0) {
+    for (int i = 1; i < n_nodes; i += 2) {
+      if (nodes[i].idx == -1 && nodes[i + 1].idx == -1) {
+        retrain_ids.emplace_back(i);
+        retrain_ids.emplace_back(i + 1);
+      }
+    }
+    sort(retrain_ids.begin(), retrain_ids.end());
+  }
 
   int n_iter = retrain_ids.size();
-  for (int i = root_num; i < n_iter; i += 2) {
+  for (int i = 0; i < n_iter; i += 2) {
+    while (is_root[retrain_ids[i]] == true) {
+      if (i < n_iter - 2) i++;
+      else break;
+    }
     int idx = -1;
     double max_gain = -1;
     for (int j = 0; j < i; ++j) {
