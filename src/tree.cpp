@@ -1128,25 +1128,21 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
 
   uint lsz, rsz, msz = config->tree_min_node_size;
   int l, r;
-  int root_num = 0;
   std::vector<bool> is_root(n_nodes);
   std::vector<uint> retrain_ids;
-  for (int i = 0; i < n_nodes; i++) {
-    auto& node = nodes[i];
-    if (node.idx >= 0 && node.is_leaf) {
-      trySplit(node.idx, -1); // can be optimized
+  for (int i = 1; i < n_nodes; i += 2) {
+    if (nodes[i].idx == -1 && nodes[i + 1].idx == -1) {
       retrain_ids.emplace_back(i);
-      is_root[i] = true;
+      retrain_ids.emplace_back(i + 1);
     }
   }
-  root_num = retrain_ids.size();
 
-  if (root_num != 0) {
-    for (int i = 1; i < n_nodes; i += 2) {
-      if (nodes[i].idx == -1 && nodes[i + 1].idx == -1) {
-        retrain_ids.emplace_back(i);
-        retrain_ids.emplace_back(i + 1);
-      }
+  if (retrain_ids.size() != 0) {
+    for (int i = 0; i < retrain_subtrees.size(); i++) {
+      int idx = retrain_subtrees[i][0];
+      trySplit(idx, -1);
+      retrain_ids.emplace_back(idx);
+      is_root[idx] = true;
     }
     sort(retrain_ids.begin(), retrain_ids.end());
   }
@@ -1165,6 +1161,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         max_gain = nodes[retrain_ids[j]].gain;
       }
     }
+    if (max_gain < 0) continue;
     l = retrain_ids[i];
     r = retrain_ids[i + 1];
     if (idx == -1) {
