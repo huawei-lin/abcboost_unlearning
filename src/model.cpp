@@ -139,6 +139,21 @@ void GradientBoosting::print_unlearn_message(int iter,double loss,double iter_ti
     fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
 }
 
+void GradientBoosting::print_tune_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::vector<double>& time_records, std::vector<double>& time_records_tree){
+  int err = getError(F);
+  printf("%4d | loss: %0.0fNull | errors: %7d | " \
+         "time: %.5f | sample_time: %.5f | compute_HR_time: %.5f | inittree_time: %.5f | tunetree_time: %.5f | updFeat_time: %.5f | updF_time: %.5f | " \
+         "dense_f_time: %.5f | splitId_time: %.5f | insertIds_time: %.5f | binSort_time: %.5f | featureGain_time: %.5f | getRetrainId_time: %.5f | retrain_time: %.5f | regress_time: %.5f | finalize_time: %.5f\n", \
+         iter, loss, err, iter_time, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], \
+         time_records_tree[0], time_records_tree[1], time_records_tree[2], time_records_tree[3], time_records_tree[4], time_records_tree[5], time_records_tree[6], time_records_tree[7], time_records_tree[8]);
+#ifdef USE_R_CMD
+  R_FlushConsole();
+#endif
+  if(config->save_log)
+    fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
+}
+
+
 ModelHeader GradientBoosting::loadModelHeader(Config *config) {
   FILE *fp = fopen(config->model_pretrained_path.c_str(), "rb");
   if (config->model_pretrained_path == "" || fp == NULL) {
@@ -1449,12 +1464,15 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
   int K = data->data_header.n_classes;
 
-  Utils::Timer t1, t2, t3;
+  Utils::Timer t1, t2, t3, t4;
   t1.restart();
   t2.restart();
   t3.restart();
+  t4.restart();
 
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
+    std::vector<double> time_records, time_records_tree;
+    double sample_time = 0,compute_HR_time=0,inittree_time=0,tunetree_time=0,updFeat_time=0,updF_time=0;
     if (config->model_data_sample_rate < 1)
       ids = sample(data->n_data, config->model_data_sample_rate);
     if (config->model_feature_sample_rate < 1)
@@ -1463,12 +1481,14 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
 
     if (fids_record.size() != 0) fids = fids_record[m];
+    sample_time += t4.get_time_restart();
 
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
+    compute_HR_time += t4.get_time_restart();
 
     for (int k = 0; k < K; ++k) {
 
@@ -1480,9 +1500,13 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      tree->tuneTree(nullptr, &fids, &tune_ids);
+      inittree_time += t4.get_time_restart();
+      tree->tuneTree(nullptr, &fids, &tune_ids, time_records_tree);
+      tunetree_time += t4.get_time_restart();
       tree->updateFeatureImportance(m);
+      updFeat_time += t4.get_time_restart();
       updateF(m, k, tree, F_record);
+      updF_time += t4.get_time_restart();
     }
 //    if (data->data_header.n_classes == 2) {
 //#pragma omp parallel for
@@ -1491,8 +1515,16 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 
     // double loss = getLoss();
     double loss = 0;
+    double time_total = t1.get_time_restart();
+
+    time_records.push_back(sample_time);
+    time_records.push_back(compute_HR_time);
+    time_records.push_back(inittree_time);
+    time_records.push_back(tunetree_time);
+    time_records.push_back(updFeat_time);
+    time_records.push_back(updF_time);
     if ((m + 1) % config->model_eval_every == 0){
-      print_unlearn_message(m + 1,loss,t1.get_time_restart(), F_record[m + 1]);
+      print_tune_message(m + 1,loss,time_total, F_record[m + 1], time_records, time_records_tree);
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
 //     if(loss < config->stop_tolerance){
