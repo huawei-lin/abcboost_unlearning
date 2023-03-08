@@ -1402,12 +1402,13 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
     if (config->model_data_sample_rate < 1)
       ids = sample(data->n_data, config->model_data_sample_rate);
-    if (config->model_feature_sample_rate < 1)
+
+    if (fids_record.size() != 0) fids = fids_record[m];
+    else if (config->model_feature_sample_rate < 1) {
       fids =
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
-
-    if (fids_record.size() != 0) fids = fids_record[m];
+    }
 
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
@@ -1473,14 +1474,16 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
     std::vector<double> time_records, time_records_tree;
     double sample_time = 0,compute_HR_time=0,inittree_time=0,tunetree_time=0,updFeat_time=0,updF_time=0;
+    t4.restart();
     if (config->model_data_sample_rate < 1)
       ids = sample(data->n_data, config->model_data_sample_rate);
-    if (config->model_feature_sample_rate < 1)
+
+    if (fids_record.size() != 0) fids = fids_record[m];
+    else if (config->model_feature_sample_rate < 1) {
       fids =
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
-
-    if (fids_record.size() != 0) fids = fids_record[m];
+    }
     sample_time += t4.get_time_restart();
 
     bool recomputeRH = false;
