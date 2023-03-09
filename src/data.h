@@ -39,6 +39,7 @@ struct DataHeader {
   std::vector<std::vector<double>> bin_starts_per_f;
   std::vector<double> idx2label;  // inverse mapping of label2idx
   std::unordered_map<double, unsigned short> label2idx;  // reordered labels
+  std::vector<unsigned int> valid_fi_record;
 
   void serialize(FILE* fp) {
     Utils::serialize(fp, n_feats);
@@ -47,6 +48,7 @@ struct DataHeader {
     Utils::serialize_vector(fp, n_bins_per_f);
     Utils::serialize_vector2d(fp, bin_starts_per_f);
     Utils::serialize_vector(fp, idx2label);
+    Utils::serialize_vector(fp, valid_fi_record);
   }
   
 	void serialize_no_map(FILE* fp) {
@@ -55,6 +57,7 @@ struct DataHeader {
     Utils::serialize_vector(fp, unobserved_fv);
     Utils::serialize_vector(fp, n_bins_per_f);
     Utils::serialize_vector(fp, idx2label);
+    Utils::serialize_vector(fp, valid_fi_record);
   }
 
   static DataHeader deserialize(FILE* fp) {
@@ -69,6 +72,7 @@ struct DataHeader {
     for (int i = 0; i < data_header.idx2label.size(); ++i) {
       data_header.label2idx[data_header.idx2label[i]] = i;
     }
+    data_header.valid_fi_record = Utils::deserialize_vector<unsigned int>(fp);
     return data_header;
   }
   
@@ -83,6 +87,7 @@ struct DataHeader {
     for (int i = 0; i < data_header.idx2label.size(); ++i) {
       data_header.label2idx[data_header.idx2label[i]] = i;
     }
+    data_header.valid_fi_record = Utils::deserialize_vector<unsigned int>(fp);
     return data_header;
   }
 };

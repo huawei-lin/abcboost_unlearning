@@ -476,11 +476,14 @@ bool Data::doesFileExist(std::string path) {
  */
 void Data::featureCleanUp() {
   valid_fi.clear();
-	if(config->model_mode == "train" || config->model_mode == "unlearn" || config->model_mode == "tune"){
+        if(data_header.valid_fi_record.empty() == false) {
+          valid_fi = data_header.valid_fi_record;
+        } else if(config->model_mode == "train" || config->model_mode == "unlearn" || config->model_mode == "tune"){
 		for (unsigned int j = 0; j < Xi.size(); ++j) {
 	//    if (!Xv_raw[j].empty()) valid_fi.push_back(j);
 			if (Xv_raw[j].size() >= 2 * config->tree_min_node_size) valid_fi.push_back(j);
 		}
+                data_header.valid_fi_record = valid_fi;
 	}else{
 		for (unsigned int j = 0; j < Xi.size(); ++j) {
 	    if (!Xv_raw[j].empty()) valid_fi.push_back(j);
