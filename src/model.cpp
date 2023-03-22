@@ -139,12 +139,12 @@ void GradientBoosting::print_unlearn_message(int iter,double loss,double iter_ti
     fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
 }
 
-void GradientBoosting::print_tune_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::vector<double>& time_records, std::vector<double>& time_records_tree){
+void GradientBoosting::print_tune_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::vector<double>& time_records, std::vector<double>& time_records_tree, int& retrain_node_cnt){
   int err = getError(F);
   printf("%4d | loss: %0.0fNull | errors: %7d | " \
-         "time: %.5f | sample_time: %.5f | compute_HR_time: %.5f | inittree_time: %.5f | tunetree_time: %.5f | updFeat_time: %.5f | updF_time: %.5f | " \
+         "time: %.5f | retrain_node_cnt: %d | sample_time: %.5f | compute_HR_time: %.5f | inittree_time: %.5f | tunetree_time: %.5f | updFeat_time: %.5f | updF_time: %.5f | " \
          "dense_f_time: %.5f | splitId_time: %.5f | insertIds_time: %.5f | binSort_time: %.5f | featureGain_time: %.5f | getRetrainId_time: %.5f | retrain_time: %.5f | regress_time: %.5f | finalize_time: %.5f\n", \
-         iter, loss, err, iter_time, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], \
+         iter, loss, err, iter_time, retrain_node_cnt, time_records[0], time_records[1], time_records[2], time_records[3], time_records[4], time_records[5], \
          time_records_tree[0], time_records_tree[1], time_records_tree[2], time_records_tree[3], time_records_tree[4], time_records_tree[5], time_records_tree[6], time_records_tree[7], time_records_tree[8]);
 #ifdef USE_R_CMD
   R_FlushConsole();
@@ -1493,6 +1493,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     }
     compute_HR_time += t4.get_time_restart();
 
+    int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
@@ -1504,7 +1505,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
       inittree_time += t4.get_time_restart();
-      tree->tuneTree(nullptr, &fids, &tune_ids, time_records_tree);
+      tree->tuneTree(nullptr, &fids, &tune_ids, time_records_tree, retrain_node_cnt);
       tunetree_time += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       updFeat_time += t4.get_time_restart();
@@ -1527,7 +1528,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     time_records.push_back(updFeat_time);
     time_records.push_back(updF_time);
     if ((m + 1) % config->model_eval_every == 0){
-      print_tune_message(m + 1,loss,time_total, F_record[m + 1], time_records, time_records_tree);
+      print_tune_message(m + 1,loss,time_total, F_record[m + 1], time_records, time_records_tree, retrain_node_cnt);
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
 //     if(loss < config->stop_tolerance){

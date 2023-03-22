@@ -1011,7 +1011,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 }
 
 void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<uint> *tune_ids_ptr, std::vector<double>& time_records) {
+                       std::vector<uint> *tune_ids_ptr, std::vector<double>& time_records, int& retrain_node_cnt) {
   double dense_f_time=0,splitId_time=0,insertIds_time=0,binSort_time=0,featureGain_time=0,getRetrainId_time=0,retrain_time=0,regress_time=0,finalize_time=0;
   Utils::Timer t4;
   t4.restart();
@@ -1150,6 +1150,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     for (int i = 0; i < retrain_subtrees.size(); i++) {
       int idx = retrain_subtrees[i][0];
       trySplit(idx, -1);
+      retrain_node_cnt++;
       retrain_ids.emplace_back(idx);
       is_root[idx] = true;
     }
@@ -1162,6 +1163,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
       if (i < n_iter - 2) i++;
       else break;
     }
+    retrain_node_cnt++;
     int idx = -1;
     double max_gain = -1;
     for (int j = 0; j < i; ++j) {
