@@ -1118,7 +1118,12 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         if (nodes[cur_id].is_leaf == false && nodes[cur_id].right != -1) q.push(nodes[cur_id].right);
 
         if (cur_id != i) nodes[cur_id] = TreeNode();
-        else nodes[cur_id].is_leaf = true; // set retrained root's leaf as true
+        else {
+          auto& node = nodes[cur_id];
+          node.is_leaf = true; // set retrained root's leaf as true
+          // node.gains.clear();
+          node.left = node.right = node.split_fi = node.split_v = node.gain = -1;
+        }
       }
       retrain_subtrees.emplace_back(retrain_ids);
     } else {
