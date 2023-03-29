@@ -34,6 +34,7 @@ typedef unsigned short data_quantized_t;
 struct DataHeader {
   unsigned int n_feats;
   unsigned int n_classes;
+  unsigned int n_classes_real;
   std::vector<unsigned short> unobserved_fv;  // unobserved values for features
   std::vector<int> n_bins_per_f;  // number of discrete categories per feature
   std::vector<std::vector<double>> bin_starts_per_f;
@@ -44,6 +45,7 @@ struct DataHeader {
   void serialize(FILE* fp) {
     Utils::serialize(fp, n_feats);
     Utils::serialize(fp, n_classes);
+    Utils::serialize(fp, n_classes_real);
     Utils::serialize_vector(fp, unobserved_fv);
     Utils::serialize_vector(fp, n_bins_per_f);
     Utils::serialize_vector2d(fp, bin_starts_per_f);
@@ -54,6 +56,7 @@ struct DataHeader {
 	void serialize_no_map(FILE* fp) {
     Utils::serialize(fp, n_feats);
     Utils::serialize(fp, n_classes);
+    Utils::serialize(fp, n_classes_real);
     Utils::serialize_vector(fp, unobserved_fv);
     Utils::serialize_vector(fp, n_bins_per_f);
     Utils::serialize_vector(fp, idx2label);
@@ -64,6 +67,7 @@ struct DataHeader {
     DataHeader data_header;
     data_header.n_feats = Utils::deserialize<unsigned int>(fp);
     data_header.n_classes = Utils::deserialize<unsigned int>(fp);
+    data_header.n_classes_real = Utils::deserialize<unsigned int>(fp);
     data_header.unobserved_fv = Utils::deserialize_vector<unsigned short>(fp);
     data_header.n_bins_per_f = Utils::deserialize_vector<int>(fp);
     data_header.bin_starts_per_f = Utils::deserialize_vector2d<double>(fp);
@@ -80,6 +84,7 @@ struct DataHeader {
     DataHeader data_header;
     data_header.n_feats = Utils::deserialize<unsigned int>(fp);
     data_header.n_classes = Utils::deserialize<unsigned int>(fp);
+    data_header.n_classes_real = Utils::deserialize<unsigned int>(fp);
     data_header.unobserved_fv = Utils::deserialize_vector<unsigned short>(fp);
     data_header.n_bins_per_f = Utils::deserialize_vector<int>(fp);
     data_header.idx2label = Utils::deserialize_vector<double>(fp);

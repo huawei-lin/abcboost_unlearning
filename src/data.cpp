@@ -971,7 +971,7 @@ void Data::loadLibsvmFormat(std::string path) {
  * Normalize the labels to consecutive discrete numbers;
  */
 void Data::normalizeLabels() {
-  unsigned int idx = data_header.n_classes;
+  unsigned int idx = data_header.n_classes_real; // will cause n_classes error if there is no n_class_real
   for (unsigned int i = 0; i < n_data; ++i) {
     double y = Y[i];
     if (data_header.label2idx.find(y) == data_header.label2idx.end()) {
@@ -982,7 +982,9 @@ void Data::normalizeLabels() {
       Y[i] = data_header.label2idx[y];
     }
   }
+  data_header.n_classes_real = idx;
   data_header.n_classes = idx;
+  if (config->model_n_classes > data_header.n_classes) data_header.n_classes = config->model_n_classes;
 }
 
 /**
