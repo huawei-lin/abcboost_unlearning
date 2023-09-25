@@ -1409,7 +1409,8 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
     time_records["sample_time"] += t4.get_time_restart();
 
     bool recomputeRH = false;
-    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    // if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    if (residuals_record.size() == 0 || config->lazy_update_freq == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
@@ -1493,7 +1494,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     time_records["sample_time"] += t4.get_time_restart();
 
     bool recomputeRH = false;
-    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    if (residuals_record.size() == 0 || config->lazy_update_freq == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
