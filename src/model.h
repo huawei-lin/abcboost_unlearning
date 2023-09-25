@@ -18,6 +18,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <map>
 
 #include "config.h"
 #include "data.h"
@@ -128,8 +129,7 @@ class GradientBoosting {
 	void print_test_message(int iter,double iter_time,int& low_err);
 	virtual void print_test_message(int iter,double iter_time,double& low_loss) {}
 	virtual void print_train_message(int iter,double loss,double iter_time);
-        void print_unlearn_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F);
-       void print_tune_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::vector<double>& time_records, std::vector<double>& time_records_tree, int& retrain_node_cnt);
+        void print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::map<std::string, double>& time_records, std::map<std::string, double>& time_records_tree, int& retrain_node_cnt);
 	
   // only for ranking
   virtual void print_rank_test_message(int iter,double iter_time);

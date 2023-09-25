@@ -828,14 +828,14 @@ void Tree::insertIds() {
 }
 
 void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<uint> *unids_ptr) {
+                       std::vector<uint> *unids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt) {
 
+  Utils::Timer t4;
+  t4.restart();
   this->unids = (*(std::vector<uint> *)unids_ptr);
   this->fids = fids;
   in_leaf.resize(data->Y.size());
   fids_record = (*(std::vector<uint> *)fids);
-
-  deleteIds();
 
   dense_fids.reserve(fids->size());
   sparse_fids.reserve(fids->size());
@@ -846,11 +846,16 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     else
       sparse_fids.push_back(fid);
   }
+  time_records["dense_f_time"] += t4.get_time_restart();
+
+  deleteIds();
+  time_records["delete_id_time"] += t4.get_time_restart();
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
   range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
   range[0] = std::make_pair(0, (this->unids).size());
+  time_records["unlearn_setting_time"] += t4.get_time_restart();
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
@@ -878,11 +883,13 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
       }
     }
+    time_records["binsort_time"] += t4.get_time_restart();
 //     if (nodes[i].is_random_node == true) {
 //       if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
 //       continue;
 //     }
     if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
+    time_records["split_unid_time"] += t4.get_time_restart();
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
     double best_gain = -1;
@@ -923,6 +930,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
         nodes[i].gain = best_gain;
       }
+      time_records["update_gains_time"] += t4.get_time_restart();
       if (nodes[i].is_leaf == true) continue;
     }
 
@@ -954,6 +962,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
       std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
+      time_records["get_retrain_id_time"] += t4.get_time_restart();
     } else {
       // splitUnids(range, i, nodes[i].left);
     }
@@ -963,6 +972,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   int l, r;
   for (std::vector<uint> &retrain_ids : retrain_subtrees) {
     int root = retrain_ids[0], n_iter = retrain_ids.size();
+    retrain_node_cnt += n_iter;
     trySplit(root, -1);
     for (int i = 1; i < n_iter; i += 2) {
       int idx = -1;
@@ -1003,6 +1013,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
   }
+  time_records["retrain_time"] += t4.get_time_restart();
 
   hist_record = *hist;
   regress(range);
@@ -1011,8 +1022,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 }
 
 void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<uint> *tune_ids_ptr, std::vector<double>& time_records, int& retrain_node_cnt) {
-  double dense_f_time=0,splitId_time=0,insertIds_time=0,binSort_time=0,featureGain_time=0,getRetrainId_time=0,retrain_time=0,regress_time=0,finalize_time=0;
+                       std::vector<uint> *tune_ids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt) {
   Utils::Timer t4;
   t4.restart();
   this->tune_ids = (*(std::vector<uint> *)tune_ids_ptr);
@@ -1029,7 +1039,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     else
       sparse_fids.push_back(fid);
   }
-  dense_f_time += t4.get_time_restart();
+  time_records["dense_f_time"] += t4.get_time_restart();
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
@@ -1041,9 +1051,9 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
   for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].is_leaf == false && nodes[i].idx >= 0) splitIds(range, i, nodes[i].left, tune_ids);
   }
-  splitId_time += t4.get_time_restart();
+  time_records["splitId_time"] += t4.get_time_restart();
   insertIds();
-  insertIds_time += t4.get_time_restart();
+  time_records["insertIds_time"] += t4.get_time_restart();
 
   for (uint i = 0; i < n_nodes; i++) {
     auto& node = nodes[i];
@@ -1070,7 +1080,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
       }
     }
-    binSort_time += t4.get_time_restart();
+    time_records["binSort_time"] += t4.get_time_restart();
     if (nodes[i].is_random_node == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
@@ -1092,7 +1102,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         featureGain(i, fid, splits, gains_start, gains_end, tune_ids, unids_start, unids_end);
       }
     )
-    featureGain_time += t4.get_time_restart();
+    time_records["featureGain_time"] += t4.get_time_restart();
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
     double best_gain = -1;
@@ -1132,7 +1142,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     } else {
       ;
     }
-    getRetrainId_time += t4.get_time_restart();
+    time_records["getRetrainId_time"] += t4.get_time_restart();
   }
 
   uint lsz, rsz, msz = config->tree_min_node_size;
@@ -1202,24 +1212,14 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
   }
-  retrain_time += t4.get_time_restart();
+  time_records["retrain_time"] += t4.get_time_restart();
 
   hist_record = *hist;
   regress(range);
-  regress_time += t4.get_time_restart();
+  time_records["regress_time"] += t4.get_time_restart();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
-  finalize_time += t4.get_time_restart();
-
-  time_records.push_back(dense_f_time);
-  time_records.push_back(splitId_time);
-  time_records.push_back(insertIds_time);
-  time_records.push_back(binSort_time);
-  time_records.push_back(featureGain_time);
-  time_records.push_back(getRetrainId_time);
-  time_records.push_back(retrain_time);
-  time_records.push_back(regress_time);
-  time_records.push_back(finalize_time);
+  time_records["finalize_time"] += t4.get_time_restart();
 }
 
 void Tree::updateFeatureImportance(int iter) {
