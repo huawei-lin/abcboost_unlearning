@@ -846,16 +846,16 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
     else
       sparse_fids.push_back(fid);
   }
-  time_records["dense_f_time"] += t4.get_time_restart();
+  time_records["unlearnTree/dense_f_time"] += t4.get_time_restart();
 
   deleteIds();
-  time_records["delete_id_time"] += t4.get_time_restart();
+  time_records["unlearnTree/delete_id_time"] += t4.get_time_restart();
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
   range = std::vector<std::pair<uint, uint>>(n_nodes, std::make_pair(0, 0));
   range[0] = std::make_pair(0, (this->unids).size());
-  time_records["unlearn_setting_time"] += t4.get_time_restart();
+  time_records["unlearnTree/unlearn_setting_time"] += t4.get_time_restart();
 #pragma omp parallel for
   for (uint i = 0; i < n_nodes; i++) nodes[i].allow_build_subtree = false;
   for (uint i = 0; i < n_nodes; i++) {
@@ -883,13 +883,13 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
       }
     }
-    time_records["binsort_time"] += t4.get_time_restart();
+    time_records["unlearnTree/binsort_time"] += t4.get_time_restart();
 //     if (nodes[i].is_random_node == true) {
 //       if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
 //       continue;
 //     }
     if (nodes[i].is_leaf == false) splitUnids(range, i, nodes[i].left);
-    time_records["split_unid_time"] += t4.get_time_restart();
+    time_records["unlearnTree/split_unid_time"] += t4.get_time_restart();
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
     double best_gain = -1;
@@ -930,7 +930,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
         nodes[i].gain = best_gain;
       }
-      time_records["update_gains_time"] += t4.get_time_restart();
+      time_records["unlearnTree/update_gains_time"] += t4.get_time_restart();
       if (nodes[i].is_leaf == true) continue;
     }
 
@@ -962,7 +962,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
       std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
-      time_records["get_retrain_id_time"] += t4.get_time_restart();
+      time_records["unlearnTree/get_retrain_id_time"] += t4.get_time_restart();
     } else {
       // splitUnids(range, i, nodes[i].left);
     }
@@ -1013,7 +1013,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
   }
-  time_records["retrain_time"] += t4.get_time_restart();
+  time_records["unlearnTree/retrain_time"] += t4.get_time_restart();
 
   hist_record = *hist;
   regress(range);
@@ -1039,7 +1039,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     else
       sparse_fids.push_back(fid);
   }
-  time_records["dense_f_time"] += t4.get_time_restart();
+  time_records["tuneTree/dense_f_time"] += t4.get_time_restart();
 
   int n_nodes = nodes.size();
   std::vector<std::vector<uint>> retrain_subtrees;
@@ -1051,9 +1051,9 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
   for (uint i = 0; i < n_nodes; i++) {
     if (nodes[i].is_leaf == false && nodes[i].idx >= 0) splitIds(range, i, nodes[i].left, tune_ids);
   }
-  time_records["splitId_time"] += t4.get_time_restart();
+  time_records["tuneTree/splitId_time"] += t4.get_time_restart();
   insertIds();
-  time_records["insertIds_time"] += t4.get_time_restart();
+  time_records["tuneTree/insertIds_time"] += t4.get_time_restart();
 
   for (uint i = 0; i < n_nodes; i++) {
     auto& node = nodes[i];
@@ -1080,7 +1080,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
       }
     }
-    time_records["binSort_time"] += t4.get_time_restart();
+    time_records["tuneTree/binSort_time"] += t4.get_time_restart();
     if (nodes[i].is_random_node == true) continue;
 
     std::vector<SplitInfo> &splits = nodes[i].gains;
@@ -1102,7 +1102,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
         featureGain(i, fid, splits, gains_start, gains_end, tune_ids, unids_start, unids_end);
       }
     )
-    time_records["featureGain_time"] += t4.get_time_restart();
+    time_records["tuneTree/featureGain_time"] += t4.get_time_restart();
 
     int best_fi = nodes[i].split_fi, best_v = nodes[i].split_v;
     double best_gain = -1;
@@ -1142,7 +1142,7 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     } else {
       ;
     }
-    time_records["getRetrainId_time"] += t4.get_time_restart();
+    time_records["tuneTree/getRetrainId_time"] += t4.get_time_restart();
   }
 
   uint lsz, rsz, msz = config->tree_min_node_size;
@@ -1212,14 +1212,14 @@ void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
     }
   }
-  time_records["retrain_time"] += t4.get_time_restart();
+  time_records["tuneTree/retrain_time"] += t4.get_time_restart();
 
   hist_record = *hist;
   regress(range);
-  time_records["regress_time"] += t4.get_time_restart();
+  time_records["tuneTree/regress_time"] += t4.get_time_restart();
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
-  time_records["finalize_time"] += t4.get_time_restart();
+  time_records["tuneTree/finalize_time"] += t4.get_time_restart();
 }
 
 void Tree::updateFeatureImportance(int iter) {

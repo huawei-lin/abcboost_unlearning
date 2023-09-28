@@ -131,7 +131,7 @@ void GradientBoosting::print_train_message(int iter,double loss,double iter_time
 
 void GradientBoosting::print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::map<std::string, double>& time_records, std::map<std::string, double>& time_records_tree, int& retrain_node_cnt){
   int err = getError(F);
-  printf("%4d | loss: NULL | errors: %7d | time: %.5f | retrain_node_cnt: %d",
+  printf("%4d | loss: %0.0f (NULL) | errors: %7d | time: %.5f | retrain_node_cnt: %d",
          iter, loss, err, iter_time, retrain_node_cnt);
   for (auto it = time_records.begin(); it != time_records.end(); it++) {
     printf(" | %s: %.5f", it->first.c_str(), it->second);
@@ -1406,7 +1406,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
     }
-    time_records["sample_time"] += t4.get_time_restart();
+    time_records["unlearn_model/sample_time"] += t4.get_time_restart();
 
     bool recomputeRH = false;
     // if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
@@ -1414,7 +1414,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
-    time_records["compute_HR_time"] += t4.get_time_restart();
+    time_records["unlearn_model/compute_HR_time"] += t4.get_time_restart();
 
     int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
@@ -1427,13 +1427,13 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      time_records["inittree_time"] += t4.get_time_restart();
+      time_records["unlearn_model/inittree_time"] += t4.get_time_restart();
       tree->unlearnTree(nullptr, &fids, &unids, time_records_tree, retrain_node_cnt);
-      time_records["tunetree_time"] += t4.get_time_restart();
+      time_records["unlearn_model/unlearntree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
-      time_records["updFeat_time"] += t4.get_time_restart();
+      time_records["unlearn_model/updFeat_time"] += t4.get_time_restart();
       updateF(m, k, tree, F_record);
-      time_records["updF_time"] += t4.get_time_restart();
+      time_records["unlearn_model/updF_time"] += t4.get_time_restart();
     }
 //    if (data->data_header.n_classes == 2) {
 //#pragma omp parallel for
@@ -1491,14 +1491,14 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
     }
-    time_records["sample_time"] += t4.get_time_restart();
+    time_records["tune_model/sample_time"] += t4.get_time_restart();
 
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || config->lazy_update_freq == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
-    time_records["compute_HR_time"] += t4.get_time_restart();
+    time_records["tune_model/compute_HR_time"] += t4.get_time_restart();
 
     int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
@@ -1511,13 +1511,13 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
-      time_records["inittree_time"] += t4.get_time_restart();
+      time_records["tune_model/inittree_time"] += t4.get_time_restart();
       tree->tuneTree(nullptr, &fids, &tune_ids, time_records_tree, retrain_node_cnt);
-      time_records["tunetree_time"] += t4.get_time_restart();
+      time_records["tune_model/tunetree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
-      time_records["updFeat_time"] += t4.get_time_restart();
+      time_records["tune_model/updFeat_time"] += t4.get_time_restart();
       updateF(m, k, tree, F_record);
-      time_records["updF_time"] += t4.get_time_restart();
+      time_records["tune_model/updF_time"] += t4.get_time_restart();
     }
 //    if (data->data_header.n_classes == 2) {
 //#pragma omp parallel for
