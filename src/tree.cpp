@@ -962,10 +962,10 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
       std::sort(retrain_ids.begin(), retrain_ids.end());
       retrain_subtrees.emplace_back(retrain_ids);
-      time_records["unlearnTree/get_retrain_id_time"] += t4.get_time_restart();
     } else {
       // splitUnids(range, i, nodes[i].left);
     }
+    time_records["unlearnTree/get_retrain_id_time"] += t4.get_time_restart();
   }
 
   uint lsz, rsz, msz = config->tree_min_node_size;

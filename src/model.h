@@ -65,6 +65,8 @@ class GradientBoosting {
   std::vector<std::vector<unsigned int>> fids_record;
   std::string experiment_path;
 
+  std::map<std::string, double> time_records;
+
   Config* config;
   Data* data;
   FILE* log_out;
@@ -129,7 +131,7 @@ class GradientBoosting {
 	void print_test_message(int iter,double iter_time,int& low_err);
 	virtual void print_test_message(int iter,double iter_time,double& low_loss) {}
 	virtual void print_train_message(int iter,double loss,double iter_time);
-        void print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, std::map<std::string, double>& time_records, std::map<std::string, double>& time_records_tree, int& retrain_node_cnt);
+        void print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, int& retrain_node_cnt);
 	
   // only for ranking
   virtual void print_rank_test_message(int iter,double iter_time);
