@@ -611,19 +611,12 @@ void GradientBoosting::setupExperiment() {
  * @param[in] v : current training example to perform softmax over.
  */
 void GradientBoosting::softmax(std::vector<double> &v) {
-  double max = v[0], normalization = 0;
+  double normalization = 0;
   int j, sz = v.size();
 
-  auto v2 = v;
-  // find max value
-  for (j = 1; j < sz; ++j) {
-    max = std::max(max, v[j]);
-  }
-
   for (j = 0; j < sz; ++j) {
-    double tmp = v[j] - max;
-    if (tmp > 700) tmp = 700;
-    v[j] = exp(tmp);
+    if (v[j] > 700) v[j] = 700;
+    v[j] = exp(v[j]);
     normalization += v[j];
   }
 
@@ -1516,9 +1509,9 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
  */
 void Mart::computeHessianResidual() {
   std::vector<double> prob;
+  prob.resize(data->data_header.n_classes);
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {
-    prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
       prob[k] = F[k][i];
@@ -1534,9 +1527,9 @@ void Mart::computeHessianResidual() {
 
 void Mart::computeHessianResidual(std::vector<std::vector<double>>& F) {
   std::vector<double> prob;
+  prob.resize(data->data_header.n_classes);
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {
-    prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
       prob[k] = F[k][i];

@@ -621,6 +621,7 @@ class Config {
         task_name = value;
       } else if (key == "lazy_update_freq") {
         lazy_update_freq = stoi(value);
+        if (lazy_update_freq < 1) lazy_update_freq = 1;
       } else if (key == "model_warmup_iter" || key == "warmup_iter") {
         warmup_iter = stoi(value);
       } else if (key == "model_warmup_use_logit" || key == "warmup_use_logit") {
