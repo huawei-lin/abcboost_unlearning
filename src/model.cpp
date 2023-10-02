@@ -622,7 +622,6 @@ void GradientBoosting::softmax(std::vector<double> &v) {
 
   // Utils::Timer t1;
   // t1.restart();
-
   for (j = 0; j < sz; ++j) {
     if (v[j] > 700) v[j] = 700;
     v[j] = exp(v[j]);
@@ -1405,7 +1404,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     bool recomputeRH = false;
     // if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
-    if (residuals_record.size() == 0 || config->lazy_update_freq == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
@@ -1489,7 +1488,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     time_records["tune_model/sample_time"] += t4.get_time_restart();
 
     bool recomputeRH = false;
-    if (residuals_record.size() == 0 || config->lazy_update_freq == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
@@ -1546,9 +1545,9 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
  */
 void Mart::computeHessianResidual() {
   std::vector<double> prob;
+  prob.resize(data->data_header.n_classes);
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {
-    prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
       prob[k] = F[k][i];

@@ -1,5 +1,7 @@
 English | [中文文档](./README_Chinese.md)
 
+This codebase is unavailable for unlearning yet.
+
 # ABCBoost 
 
 This toolkit consists of ABCBoost, the implementation of [Fast ABCBoost](https://arxiv.org/pdf/2205.10927.pdf) (Fast Adaptive Base Class Boost). 
