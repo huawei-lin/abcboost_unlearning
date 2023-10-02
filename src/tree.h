@@ -109,10 +109,17 @@ class Tree {
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void deleteIds();
   void insertIds();
+#ifdef TIME_EVALUATION
   void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt);
   void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *tune_ids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt);
+#else
+  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+                   std::vector<uint> *unids_ptr);
+  void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+                   std::vector<uint> *tune_ids_ptr);
+#endif
 
   void updateFeatureImportance(int iter);
 

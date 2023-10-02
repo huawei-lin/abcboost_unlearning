@@ -129,6 +129,7 @@ void GradientBoosting::print_train_message(int iter,double loss,double iter_time
     fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
 }
 
+#ifdef TIME_EVALUATION
 void GradientBoosting::print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, int& retrain_node_cnt){
   int err = getError(F);
   printf("%4d | loss: %0.0f (NULL) | errors: %7d | time: %.5f | retrain_node_cnt: %d",
@@ -143,6 +144,7 @@ void GradientBoosting::print_detailed_message(int iter,double loss,double iter_t
   if(config->save_log)
     fprintf(log_out,"%4d %20.14e %7d %.5f\n", iter, loss, err, iter_time);
 }
+#endif
 
 
 ModelHeader GradientBoosting::loadModelHeader(Config *config) {
@@ -620,20 +622,16 @@ void GradientBoosting::softmax(std::vector<double> &v) {
   double normalization = 0;
   int j, sz = v.size();
 
-  // Utils::Timer t1;
-  // t1.restart();
   for (j = 0; j < sz; ++j) {
     if (v[j] > 700) v[j] = 700;
     v[j] = exp(v[j]);
     normalization += v[j];
   }
-  // time_records["computeHessianResidual/softmax/exp_time"] += t1.get_time_restart();
 
   // normalize
   for (j = 0; j < sz; ++j) {
     v[j] /= normalization;
   }
-  // time_records["computeHessianResidual/softmax/normalize_time"] += t1.get_time_restart();
 }
 
 /**
@@ -1382,15 +1380,23 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
   int K = data->data_header.n_classes;
 
-  Utils::Timer t1, t2, t3, t4;
+  Utils::Timer t1, t2, t3;
   t1.restart();
   t2.restart();
   t3.restart();
+
+#ifdef TIME_EVALUATION
+  Utils::Timer t4;
   t4.restart();
+#endif
 
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
+
+#ifdef TIME_EVALUATION
     time_records.clear();
     t4.restart();
+#endif
+
     if (config->model_data_sample_rate < 1)
       ids = sample(data->n_data, config->model_data_sample_rate);
 
@@ -1400,7 +1406,9 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
     }
+#ifdef TIME_EVALUATION
     time_records["unlearn_model/sample_time"] += t4.get_time_restart();
+#endif
 
     bool recomputeRH = false;
     // if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
@@ -1408,7 +1416,9 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
+#ifdef TIME_EVALUATION
     time_records["unlearn_model/compute_HR_time"] += t4.get_time_restart();
+#endif
 
     int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
@@ -1421,6 +1431,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
+#ifdef TIME_EVALUATION
       time_records["unlearn_model/inittree_time"] += t4.get_time_restart();
       tree->unlearnTree(nullptr, &fids, &unids, time_records, retrain_node_cnt);
       time_records["unlearn_model/unlearntree_time"] += t4.get_time_restart();
@@ -1428,6 +1439,11 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
       time_records["unlearn_model/updFeat_time"] += t4.get_time_restart();
       updateF(m, k, tree, F_record);
       time_records["unlearn_model/updF_time"] += t4.get_time_restart();
+#else
+      tree->unlearnTree(nullptr, &fids, &unids);
+      tree->updateFeatureImportance(m);
+      updateF(m, k, tree, F_record);
+#endif
     }
 //    if (data->data_header.n_classes == 2) {
 //#pragma omp parallel for
@@ -1440,7 +1456,11 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     if ((m + 1) % config->model_eval_every == 0){
       // print_unlearn_message(m + 1,loss,t1.get_time_restart(), F_record[m + 1]);
+#ifdef TIME_EVALUATION
       print_detailed_message(m + 1,loss,time_total, F_record[m + 1], retrain_node_cnt);
+#else
+      print_train_message(m + 1,loss,time_total);
+#endif
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
 //     if(loss < config->stop_tolerance){
@@ -1467,15 +1487,21 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   // int K = (data->data_header.n_classes == 2) ? 1 : data->data_header.n_classes;
   int K = data->data_header.n_classes;
 
-  Utils::Timer t1, t2, t3, t4;
+  Utils::Timer t1, t2, t3;
   t1.restart();
   t2.restart();
   t3.restart();
+
+#ifdef TIME_EVALUATION
+  Utils::Timer t4;
   t4.restart();
+#endif
 
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
+#ifdef TIME_EVALUATION
     time_records.clear();
     t4.restart();
+#endif
     if (config->model_data_sample_rate < 1)
       ids = sample(data->n_data, config->model_data_sample_rate);
 
@@ -1485,14 +1511,18 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
           // sample(data->data_header.n_feats, config->model_feature_sample_rate);
           sample((data->valid_fi).size(), config->model_feature_sample_rate);
     }
+#ifdef TIME_EVALUATION
     time_records["tune_model/sample_time"] += t4.get_time_restart();
+#endif
 
     bool recomputeRH = false;
     if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
     }
+#ifdef TIME_EVALUATION
     time_records["tune_model/compute_HR_time"] += t4.get_time_restart();
+#endif
 
     int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
@@ -1505,6 +1535,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
         tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
+#ifdef TIME_EVALUATION
       time_records["tune_model/inittree_time"] += t4.get_time_restart();
       tree->tuneTree(nullptr, &fids, &tune_ids, time_records, retrain_node_cnt);
       time_records["tune_model/tunetree_time"] += t4.get_time_restart();
@@ -1512,6 +1543,11 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
       time_records["tune_model/updFeat_time"] += t4.get_time_restart();
       updateF(m, k, tree, F_record);
       time_records["tune_model/updF_time"] += t4.get_time_restart();
+#else
+      tree->tuneTree(nullptr, &fids, &tune_ids);
+      tree->updateFeatureImportance(m);
+      updateF(m, k, tree, F_record);
+#endif
     }
 //    if (data->data_header.n_classes == 2) {
 //#pragma omp parallel for
@@ -1523,7 +1559,11 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     double time_total = t1.get_time_restart();
 
     if ((m + 1) % config->model_eval_every == 0){
+#ifdef TIME_EVALUATION
       print_detailed_message(m + 1,loss,time_total, F_record[m + 1], retrain_node_cnt);
+#else
+      print_train_message(m + 1,loss,time_total);
+#endif
     }
     // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
 //     if(loss < config->stop_tolerance){
@@ -1563,26 +1603,20 @@ void Mart::computeHessianResidual() {
 
 void Mart::computeHessianResidual(std::vector<std::vector<double>>& F) {
   std::vector<double> prob;
-  // Utils::Timer t1;
-  // t1.restart();
   prob.resize(data->data_header.n_classes);
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {
     // prob.resize(data->data_header.n_classes);
-    // time_records["computeHessianResidual/prob_resize_time"] += t1.get_time_restart();
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
       prob[k] = F[k][i];
     }
-    // time_records["computeHessianResidual/get_prob_time"] += t1.get_time_restart();
     softmax(prob);
-    // time_records["computeHessianResidual/softmax_time"] += t1.get_time_restart();
     for (int k = 0; k < data->data_header.n_classes; ++k) {
       double p_ik = prob[k];
       residuals[k * data->n_data + i] = (k == label) ? (1 - p_ik) : -p_ik;
       hessians[k * data->n_data + i] = p_ik * (1 - p_ik);
     }
-    // time_records["computeHessianResidual/get_HR_time"] += t1.get_time_restart();
   }
 }
 

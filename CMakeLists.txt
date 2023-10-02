@@ -15,9 +15,14 @@ file(GLOB SOURCE_FILES src/*.h src/*.cpp)
 option(CUDA "cuda" OFF)
 option(OMP "omp" OFF)
 option(NATIVE "native" OFF)
+option(TIME_EVALUATION "time_evaluation" OFF)
 
 if (NATIVE)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+endif()
+
+if (TIME_EVALUATION)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DTIME_EVALUATION")
 endif()
 
 
