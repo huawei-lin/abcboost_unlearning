@@ -1472,6 +1472,12 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
     }
   }
 
+  double delta_sum_w = 0, delta_sum_s = 0;
+  for (int i = 0; i < unids_len; i++) {
+    delta_sum_w += w[i];
+    delta_sum_s += s[i];
+  }
+
   CONDITION_OMP_PARALLEL_FOR(
     omp parallel for schedule(static, 1),
     config->use_omp == true,
@@ -1487,13 +1493,14 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         }
       }
   
-      double delta_r_w = 0, delta_r_s = 0;
-      for (int i = 0; i < unids_len; i++) {
-        if (bin_ids[i] > split_v) {
-          delta_r_w += w[i];
-          delta_r_s += s[i];
-        }
-      }
+      double delta_r_w = delta_sum_w - delta_l_w, delta_r_s = delta_sum_s - delta_l_s;
+//       double delta_r_w = 0, delta_r_s = 0;
+//       for (int i = 0; i < unids_len; i++) {
+//         if (bin_ids[i] > split_v) {
+//           delta_r_w += w[i];
+//           delta_r_s += s[i];
+//         }
+//       }
 
       double new_gain = -1;
       if (l_w != delta_l_w && r_w != delta_r_w) {
