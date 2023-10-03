@@ -106,19 +106,20 @@ class Tree {
   virtual void unlearnBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
   virtual void tuneBinSort(int x, int sib, uint start, uint end, std::vector<uint>& ids);
 
-  void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void deleteIds();
   void insertIds();
-#ifdef TIME_EVALUATION
-  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
-                   std::vector<uint> *unids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt);
-  void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
-                   std::vector<uint> *tune_ids_ptr, std::map<std::string, double>& time_records, int& retrain_node_cnt);
-#else
+
+  void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
   void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *tune_ids_ptr);
+
+#ifdef TIME_EVALUATION
+  std::map<std::string, double>* time_records;
+  int* retrain_node_cnt;
+
+  void set_evlation_records(std::map<std::string, double>* time_records, int* retrain_node_cnt = nullptr);
 #endif
 
   void updateFeatureImportance(int iter);

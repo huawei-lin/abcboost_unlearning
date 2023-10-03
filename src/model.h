@@ -133,8 +133,9 @@ class GradientBoosting {
 	void print_test_message(int iter,double iter_time,int& low_err);
 	virtual void print_test_message(int iter,double iter_time,double& low_loss) {}
 	virtual void print_train_message(int iter,double loss,double iter_time);
+        void print_train_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F);
 # ifdef TIME_EVALUATION
-        void print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, int& retrain_node_cnt);
+        void print_detailed_message(int iter,double loss,double iter_time, std::vector<std::vector<double>>& F, int retrain_node_cnt);
 # endif
 	
   // only for ranking
