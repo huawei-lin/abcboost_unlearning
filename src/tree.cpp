@@ -1393,16 +1393,19 @@ std::pair<double, double> Tree::featureGain(int x, uint fid) const{
   return std::make_pair(max_gain, best_split_v);
 }
 
-
 void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains_start, int gains_end, \
-                       std::vector<uint>& unids, int unids_start, int unids_end) { // Suppose unids is ordered
+                       std::vector<uint>& unids, int unids_start, int unids_end) {
+  // Ensure unids is ordered and split_v is ordered
   if (unids_end - unids_start <= 0) return;
   const auto* H = hessian;
   const auto* R = residual;
 
   int unids_len = unids_end - unids_start;
-  std::vector<hist_t> s(unids_len), w(unids_len);
-  std::vector<int> bin_ids(unids_len, -1);
+  struct sw_node {
+    hist_t s, w;
+    int bin_id;
+  };
+  std::vector<sw_node> sw_list(unids_len);
 
   if(data->auxDataWidth[fid] == 0){
     std::vector<data_quantized_t> &fv = (data->Xv)[fid];
@@ -1411,10 +1414,10 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         int offset = i - unids_start;
         int id = unids[i];
         int bin_id = fv[id];
-        
-        bin_ids[offset] = bin_id;
-        s[offset] = R[id];
-        w[offset] = is_weighted ? H[id] : 1;
+
+        sw_list[offset].bin_id = bin_id;
+        sw_list[offset].s = R[id];
+        sw_list[offset].w = H[id];
       }
     } else {
       std::vector<uint> &fi = (data->Xi)[fid];
@@ -1423,9 +1426,9 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         int offset = i - unids_start;
         auto id = unids[i];
 
-        bin_ids[offset] = j_unobserved;
-        s[offset] = R[id];
-        w[offset] = is_weighted ? H[id] : 1;
+        sw_list[offset].bin_id = j_unobserved;
+        sw_list[offset].s = R[id];
+        sw_list[offset].w = H[id];
       }
       for(int i = 0, j = unids_start; i < fi.size(); ++i){
         while (fi[i] > unids[j] && j < unids_end) j++;
@@ -1433,7 +1436,7 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         if (fi[i] == unids[j]) {
           int offset = j - unids_start;
           auto bin_id = fv[i];
-          bin_ids[offset] = bin_id;
+          sw_list[offset].bin_id = bin_id;
         }
       }
     }
@@ -1445,9 +1448,9 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         int id = unids[i];
         int bin_id = (fv[id >> 1] >> ((id & 1) << 2)) & 15;
         
-        bin_ids[offset] = bin_id;
-        s[offset] = R[id];
-        w[offset] = is_weighted ? H[id] : 1;
+        sw_list[offset].bin_id = bin_id;
+        sw_list[offset].s = R[id];
+        sw_list[offset].w = H[id];
       }
     } else {
       std::vector<uint> &fi = (data->Xi)[fid];
@@ -1456,9 +1459,9 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         int offset = i - unids_start;
         auto id = unids[i];
 
-        bin_ids[offset] = j_unobserved;
-        s[offset] = R[id];
-        w[offset] = is_weighted ? H[id] : 1;
+        sw_list[offset].bin_id = j_unobserved;
+        sw_list[offset].s = R[id];
+        sw_list[offset].w = H[id];
       }
       for(int i = 0, j = unids_start; i < fi.size(); ++i){
         while (fi[i] > unids[j] && j < unids_end) j++;
@@ -1466,64 +1469,58 @@ void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int gains
         if (fi[i] == unids[j]) {
           int offset = j - unids_start;
           auto bin_id = (fv[i >> 1] >> ((i & 1) << 2)) & 15;
-          bin_ids[offset] = bin_id;
+          // bin_ids[offset] = bin_id;
+          sw_list[offset].bin_id = bin_id;
         }
       }
     }
   }
+
+  std::sort(sw_list.begin(), sw_list.end(), [](sw_node &a, sw_node &b) {return a.bin_id < b.bin_id;});
 
   double delta_sum_w = 0, delta_sum_s = 0;
   for (int i = 0; i < unids_len; i++) {
-    delta_sum_w += w[i];
-    delta_sum_s += s[i];
+    delta_sum_w += sw_list[i].w;
+    delta_sum_s += sw_list[i].s;
   }
 
-  CONDITION_OMP_PARALLEL_FOR(
-    omp parallel for schedule(static, 1),
-    config->use_omp == true,
-    for (int i = gains_start; i < gains_end; i++) {
-      if (gains[i].gain < 0) continue;
-      int split_v = gains[i].split_v;
-      double l_s = gains[i].l_s, l_w = gains[i].l_w, r_s = gains[i].r_s, r_w = gains[i].r_w;
-      double delta_l_w = 0, delta_l_s = 0;
-      for (int i = 0; i < unids_len; i++) {
-        if (bin_ids[i] <= split_v) {
-          delta_l_w += w[i];
-          delta_l_s += s[i];
-        }
-      }
-  
-      double delta_r_w = delta_sum_w - delta_l_w, delta_r_s = delta_sum_s - delta_l_s;
-//       double delta_r_w = 0, delta_r_s = 0;
-//       for (int i = 0; i < unids_len; i++) {
-//         if (bin_ids[i] > split_v) {
-//           delta_r_w += w[i];
-//           delta_r_s += s[i];
-//         }
-//       }
+  int sw_idx = 0;
+  double delta_l_w = 0, delta_l_s = 0;
+  for (int i = gains_start; i < gains_end; i++) {
+    if (gains[i].gain < 0) continue;
+    int split_v = gains[i].split_v;
+    double l_s = gains[i].l_s, l_w = gains[i].l_w, r_s = gains[i].r_s, r_w = gains[i].r_w;
 
-      double new_gain = -1;
-      if (l_w != delta_l_w && r_w != delta_r_w) {
-        double new_l_s = 0, new_r_s = 0, new_l_w = 0, new_r_w = 0;
-        if (config->model_mode == "unlearn") {
-          new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
-          new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
-        } else if (config->model_mode == "tune") {
-          new_l_s = l_s + delta_l_s, new_r_s = r_s + delta_r_s;
-          new_l_w = l_w + delta_l_w, new_r_w = r_w + delta_r_w;
-        }
-
-        new_gain = new_l_s/new_l_w * new_l_s + new_r_s/new_r_w * new_r_s;
-        new_gain -= (new_l_s + new_r_s)/(new_l_w + new_r_w) * (new_l_s + new_r_s);
-
-        gains[i].l_s = new_l_s;
-        gains[i].l_w = new_l_w;
-        gains[i].r_s = new_r_s;
-        gains[i].r_w = new_r_w;
-      }
-      gains[i].gain = new_gain;
+    while (sw_idx < unids_len && sw_list[sw_idx].bin_id <= split_v) {
+        delta_l_w += sw_list[sw_idx].w;
+        delta_l_s += sw_list[sw_idx].s;
+        sw_idx += 1;
     }
-  )
+
+    double delta_r_w = delta_sum_w - delta_l_w, delta_r_s = delta_sum_s - delta_l_s;
+
+    double new_gain = -1;
+    if (l_w != delta_l_w && r_w != delta_r_w) {
+      double new_l_s = 0, new_r_s = 0, new_l_w = 0, new_r_w = 0;
+      if (config->model_mode == "unlearn") {
+        new_l_s = l_s - delta_l_s, new_r_s = r_s - delta_r_s;
+        new_l_w = l_w - delta_l_w, new_r_w = r_w - delta_r_w;
+      } else if (config->model_mode == "tune") {
+        new_l_s = l_s + delta_l_s, new_r_s = r_s + delta_r_s;
+        new_l_w = l_w + delta_l_w, new_r_w = r_w + delta_r_w;
+      }
+
+      new_gain = new_l_s/new_l_w * new_l_s + new_r_s/new_r_w * new_r_s;
+      new_gain -= (new_l_s + new_r_s)/(new_l_w + new_r_w) * (new_l_s + new_r_s);
+
+      gains[i].l_s = new_l_s;
+      gains[i].l_w = new_l_w;
+      gains[i].r_s = new_r_s;
+      gains[i].r_w = new_r_w;
+    }
+    gains[i].gain = new_gain;
+  }
+
 }
 
 void Tree::featureGain(int x, uint fid, std::vector<SplitInfo>& gains, int start, int end) {
