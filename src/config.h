@@ -135,6 +135,7 @@ class Config {
   std::string map_dump_format = "";
   std::string task_name = "";
   int lazy_update_freq = 1;
+  double split_robustness_tolerance = 0;
 
   // Rank Query File
   std::string rank_query_file = "";
@@ -622,6 +623,8 @@ class Config {
       } else if (key == "lazy_update_freq") {
         lazy_update_freq = stoi(value);
         if (lazy_update_freq < 1) lazy_update_freq = 1;
+      } else if (key == "split_robustness_tolerance") {
+        split_robustness_tolerance = stod(value);
       } else if (key == "model_warmup_iter" || key == "warmup_iter") {
         warmup_iter = stoi(value);
       } else if (key == "model_warmup_use_logit" || key == "warmup_use_logit") {

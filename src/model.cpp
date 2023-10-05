@@ -1438,6 +1438,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
   t4.restart();
 #endif
 
+  int retrain_node_num = 0;
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
 
 #ifdef TIME_EVALUATION
@@ -1460,15 +1461,16 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
     bool recomputeRH = false;
     // if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
-    if (residuals_record.size() == 0 || (m + 1)%config->lazy_update_freq == 0) {
+    if (retrain_node_num > 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
+      retrain_node_num = 0;
     }
 #ifdef TIME_EVALUATION
     time_records["unlearn_model/compute_HR_time"] += t4.get_time_restart();
+    int retrain_node_cnt = 0;
 #endif
 
-    int retrain_node_cnt = 0;
     for (int k = 0; k < K; ++k) {
 
       Tree *tree = additive_trees[m][k].get();
@@ -1482,16 +1484,23 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 #ifdef TIME_EVALUATION
       tree->set_evlation_records(&time_records, &retrain_node_cnt);
       time_records["unlearn_model/inittree_time"] += t4.get_time_restart();
-      tree->unlearnTree(nullptr, &fids, &unids);
+      retrain_node_num += tree->unlearnTree(nullptr, &fids, &unids);
       time_records["unlearn_model/unlearntree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       time_records["unlearn_model/updFeat_time"] += t4.get_time_restart();
-      updateF(m, k, tree, F_record);
+      // updateF(m, k, tree, F_record);
+      // if (F_record[m].size() == 0 || m%config->lazy_update_freq == 0 || m == config->model_n_iterations - 1) {
+      if (retrain_node_num > 0) {
+        updateF(m, k, tree, F_record);
+      }
       time_records["unlearn_model/updF_time"] += t4.get_time_restart();
 #else
-      tree->unlearnTree(nullptr, &fids, &unids);
+      retrain_node_num += tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
-      updateF(m, k, tree, F_record);
+      // updateF(m, k, tree, F_record);
+      if (retrain_node_num > 0) {
+        updateF(m, k, tree, F_record);
+      }
 #endif
     }
 //    if (data->data_header.n_classes == 2) {

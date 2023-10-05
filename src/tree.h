@@ -110,7 +110,7 @@ class Tree {
   void insertIds();
 
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
-  void unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+  int unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
   void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *tune_ids_ptr);

@@ -861,7 +861,7 @@ void Tree::insertIds() {
   ids = ids_new;
 }
 
-void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
+int Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
                        std::vector<uint> *unids_ptr) {
 #ifdef TIME_EVALUATION
   Utils::Timer t4;
@@ -872,6 +872,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   this->fids = fids;
   in_leaf.resize(data->Y.size());
   fids_record = (*(std::vector<uint> *)fids);
+  int retrain_node_num = 0;
 
   dense_fids.reserve(fids->size());
   sparse_fids.reserve(fids->size());
@@ -978,6 +979,22 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
         }
         nodes[i].gain = best_gain;
       }
+
+      if (best_gain != -1 && !(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
+        std::vector<SplitInfo> sorted_gains(nodes[i].gains);
+        std::sort(sorted_gains.begin(), sorted_gains.end(), [](SplitInfo& a, SplitInfo& b){return a.gain > b.gain;});
+        int tolerance = std::max((int)(sorted_gains.size() * config->split_robustness_tolerance), 1);
+        for (int j = 0; j < tolerance; j++) {
+          auto &info = sorted_gains[j];
+          if (nodes[i].split_fi == info.split_fi && nodes[i].split_v == info.split_v) {
+            best_gain = info.gain;
+            best_fi = info.split_fi;
+            best_v = info.split_v;
+            nodes[i].gain = best_gain;
+            break;
+          }
+        }
+      }
 #ifdef TIME_EVALUATION
       (*time_records)["unlearnTree/update_gains_time"] += t4.get_time_restart();
 #endif
@@ -1027,6 +1044,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 #ifdef TIME_EVALUATION
     (*retrain_node_cnt) += n_iter;
 #endif
+    retrain_node_num += n_iter;
     trySplit(root, -1);
     for (int i = 1; i < n_iter; i += 2) {
       int idx = -1;
@@ -1075,6 +1093,7 @@ void Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
   regress(range);
   in_leaf.resize(0);
   in_leaf.shrink_to_fit();
+  return retrain_node_num;
 }
 
 void Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
