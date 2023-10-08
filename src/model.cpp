@@ -1567,6 +1567,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 #endif
 
     bool recomputeRH = false;
+    computeHessianResidual(F_record[m], tune_ids, residuals_record[m], hessians_record[m]);
     if (retrain_node_num > 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
@@ -1659,6 +1660,25 @@ void Mart::computeHessianResidual(std::vector<std::vector<double>>& F) {
   prob.resize(data->data_header.n_classes);
 #pragma omp parallel for schedule(static) private(prob)
   for (unsigned int i = 0; i < data->n_data; ++i) {
+    // prob.resize(data->data_header.n_classes);
+    int label = int(data->Y[i]);
+    for (int k = 0; k < data->data_header.n_classes; ++k) {
+      prob[k] = F[k][i];
+    }
+    softmax(prob);
+    for (int k = 0; k < data->data_header.n_classes; ++k) {
+      double p_ik = prob[k];
+      residuals[k * data->n_data + i] = (k == label) ? (1 - p_ik) : -p_ik;
+      hessians[k * data->n_data + i] = p_ik * (1 - p_ik);
+    }
+  }
+}
+
+void Mart::computeHessianResidual(std::vector<std::vector<double>>& F, std::vector<unsigned int>& tune_ids, std::vector<double>& residuals, std::vector<double>& hessians) {
+  std::vector<double> prob;
+  prob.resize(data->data_header.n_classes);
+#pragma omp parallel for schedule(static) private(prob)
+  for (unsigned int& i : tune_ids) {
     // prob.resize(data->data_header.n_classes);
     int label = int(data->Y[i]);
     for (int k = 0; k < data->data_header.n_classes; ++k) {
