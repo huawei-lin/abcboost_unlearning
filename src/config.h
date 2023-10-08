@@ -134,7 +134,6 @@ class Config {
   double gbrank_update_factor = 100;
   std::string map_dump_format = "";
   std::string task_name = "";
-  int lazy_update_freq = 1;
   double split_robustness_tolerance = 0;
 
   // Rank Query File
@@ -401,7 +400,7 @@ class Config {
 * `-regression_huber_delta`, `-huber_delta` the delta parameter for huber loss. This parameter only takes into effect when `-regression_huber_loss 1` is set\n\
 #### Unlearning related:\n\
 * `-unlearning_ids_path` path to unlearning's indies\n\
-* `-lazy_update_freq` (default 1)\n\
+* `-split_robustness_tolerance` (default 0)\n\
 #### Parallelism:\n\
 * `-n_threads`, `-threads` (default 1)\n\
 * `-use_gpu` 0/1 (default 1 if compiled with CUDA) whether use GPU to train models. This parameter only takes into effect when the flag `-DCUDA=on` is set in `cmake`.\n\
@@ -620,9 +619,6 @@ class Config {
         map_dump_format = value;
       } else if (key == "task_name") {
         task_name = value;
-      } else if (key == "lazy_update_freq") {
-        lazy_update_freq = stoi(value);
-        if (lazy_update_freq < 1) lazy_update_freq = 1;
       } else if (key == "split_robustness_tolerance") {
         split_robustness_tolerance = stod(value);
       } else if (key == "model_warmup_iter" || key == "warmup_iter") {

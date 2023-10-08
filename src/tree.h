@@ -112,12 +112,13 @@ class Tree {
   void buildTree(std::vector<uint> *ids, std::vector<uint> *fids);
   int unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
-  void tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
+  int tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *tune_ids_ptr);
 
 #ifdef TIME_EVALUATION
   std::map<std::string, double>* time_records;
   int* retrain_node_cnt;
+  Utils::Timer t4;
 
   void set_evlation_records(std::map<std::string, double>* time_records, int* retrain_node_cnt = nullptr);
 #endif
