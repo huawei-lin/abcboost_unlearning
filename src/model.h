@@ -67,6 +67,7 @@ class GradientBoosting {
 
 # ifdef TIME_EVALUATION
   std::map<std::string, double> time_records;
+  std::map<std::string, std::vector<double>> vector_record;
 # endif
 
   Config* config;

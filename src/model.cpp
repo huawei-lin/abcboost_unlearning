@@ -150,6 +150,13 @@ void GradientBoosting::print_detailed_message(int iter, double loss, double iter
   for (auto it = time_records.begin(); it != time_records.end(); it++) {
     printf(" | %s: %.5f", it->first.c_str(), it->second);
   }
+
+#ifdef SPLIT_EVALUATION
+  for (auto it = vector_record.begin(); it != vector_record.end(); it++) {
+    printf(" | %s: ", it->first.c_str());
+    for (auto& x : it->second) printf("%f ", x);
+  }
+#endif
   printf("\n");
 #ifdef USE_R_CMD
   R_FlushConsole();
@@ -1336,6 +1343,7 @@ void Mart::train() {
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
 #ifdef TIME_EVALUATION
     for (auto& x : time_records) x.second = 0;
+    for (auto& x : vector_record) x.second.clear();
     t4.restart();
 #endif
 
@@ -1367,7 +1375,7 @@ void Mart::train() {
       tree->init(&hist, &buffer[0], &buffer[1], &feature_importance,
                  &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
 #ifdef TIME_EVALUATION
-      tree->set_evlation_records(&time_records);
+      tree->set_evlation_records(&time_records, &vector_record);
       time_records["train_model/inittree_time"] += t4.get_time_restart();
       tree->buildTree(&ids, &fids);
       time_records["train_model/buildtree_time"] += t4.get_time_restart();
@@ -1443,6 +1451,7 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
 
 #ifdef TIME_EVALUATION
     for (auto& x : time_records) x.second = 0;
+    for (auto& x : vector_record) x.second.clear();
     t4.restart();
 #endif
 
@@ -1481,18 +1490,20 @@ void Mart::unlearn(std::vector<unsigned int>& unids) {
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
 #ifdef TIME_EVALUATION
-      tree->set_evlation_records(&time_records, &retrain_node_cnt);
+      tree->set_evlation_records(&time_records, &vector_record, &retrain_node_cnt);
       time_records["unlearn_model/inittree_time"] += t4.get_time_restart();
       retrain_node_num += tree->unlearnTree(nullptr, &fids, &unids);
       time_records["unlearn_model/unlearntree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       time_records["unlearn_model/updFeat_time"] += t4.get_time_restart();
-      if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      // if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      updateF(m, k, tree, F_record);
       time_records["unlearn_model/updF_time"] += t4.get_time_restart();
 #else
       retrain_node_num += tree->unlearnTree(nullptr, &fids, &unids);
       tree->updateFeatureImportance(m);
-      if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      // if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      updateF(m, k, tree, F_record);
 #endif
     }
 //    if (data->data_header.n_classes == 2) {
@@ -1551,6 +1562,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
 #ifdef TIME_EVALUATION
     for (auto& x : time_records) x.second = 0;
+    for (auto& x : vector_record) x.second.clear();
     t4.restart();
 #endif
     if (config->model_data_sample_rate < 1)
@@ -1567,11 +1579,17 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 #endif
 
     bool recomputeRH = false;
-    computeHessianResidual(F_record[m], tune_ids, residuals_record[m], hessians_record[m]);
+    // computeHessianResidual(F_record[m]);
+    // recomputeRH = true;
+    // printf("retrain_node_num: %d\n", retrain_node_num);
+    // retrain_node_num = 0;
+    // printf("retrain_node_num: %d\n", retrain_node_num);
     if (retrain_node_num > 0) {
       computeHessianResidual(F_record[m]);
       recomputeRH = true;
       retrain_node_num = 0;
+    } else {
+      computeHessianResidual(F_record[m], tune_ids, residuals_record[m], hessians_record[m]);
     }
 #ifdef TIME_EVALUATION
     time_records["tune_model/compute_HR_time"] += t4.get_time_restart();
@@ -1589,18 +1607,20 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
                    &(hessians_record[m][k * data->n_data]), &(residuals_record[m][k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
       }
 #ifdef TIME_EVALUATION
-      tree->set_evlation_records(&time_records, &retrain_node_cnt);
+      tree->set_evlation_records(&time_records, &vector_record, &retrain_node_cnt);
       time_records["tune_model/inittree_time"] += t4.get_time_restart();
       retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids);
       time_records["tune_model/tunetree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       time_records["tune_model/updFeat_time"] += t4.get_time_restart();
       if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      // updateF(m, k, tree, F_record);
       time_records["tune_model/updF_time"] += t4.get_time_restart();
 #else
       retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids);
       tree->updateFeatureImportance(m);
       if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      // updateF(m, k, tree, F_record);
 #endif
     }
 //    if (data->data_header.n_classes == 2) {

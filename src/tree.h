@@ -117,10 +117,11 @@ class Tree {
 
 #ifdef TIME_EVALUATION
   std::map<std::string, double>* time_records;
+  std::map<std::string, std::vector<double>>* vector_record;
   int* retrain_node_cnt;
   Utils::Timer t4;
 
-  void set_evlation_records(std::map<std::string, double>* time_records, int* retrain_node_cnt = nullptr);
+  void set_evlation_records(std::map<std::string, double>* time_records, std::map<std::string, std::vector<double>>* vector_record, int* retrain_node_cnt = nullptr);
 #endif
 
   void updateFeatureImportance(int iter);

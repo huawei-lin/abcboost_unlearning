@@ -16,6 +16,7 @@ option(CUDA "cuda" OFF)
 option(OMP "omp" OFF)
 option(NATIVE "native" OFF)
 option(TIME_EVALUATION "time_evaluation" OFF)
+option(SPLIT_EVALUATION "split_evaluation" OFF)
 
 if (NATIVE)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
@@ -25,6 +26,9 @@ if (TIME_EVALUATION)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DTIME_EVALUATION")
 endif()
 
+if (SPLIT_EVALUATION)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPLIT_EVALUATION")
+endif()
 
 add_definitions(-w)
 

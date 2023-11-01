@@ -598,8 +598,9 @@ void Tree::tuneBinSort(int x, int sib, uint start, uint end, std::vector<uint>& 
 }
 
 #ifdef TIME_EVALUATION
-  void Tree::set_evlation_records(std::map<std::string, double>* time_records, int* retrain_node_cnt) {
+  void Tree::set_evlation_records(std::map<std::string, double>* time_records, std::map<std::string, std::vector<double>>* vector_record, int* retrain_node_cnt) {
     this->time_records = time_records;
+    this->vector_record = vector_record;
     this->retrain_node_cnt = retrain_node_cnt;
   }
 #endif
@@ -966,6 +967,10 @@ int Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
       }
 
       int tolerance = std::max((int)(nodes[i].gains.size() * config->split_robustness_tolerance), 1);
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+      int best_split_order = 0;
+      tolerance = nodes[i].gains.size();
+#endif
       if (tolerance > 1 && best_gain != -1 && !(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
         std::vector<SplitInfo> sorted_gains(nodes[i].gains);
         std::sort(sorted_gains.begin(), sorted_gains.end(), [](SplitInfo& a, SplitInfo& b){return a.gain > b.gain;});
@@ -976,10 +981,18 @@ int Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
             best_fi = info.split_fi;
             best_v = info.split_v;
             nodes[i].gain = best_gain;
+
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+            best_split_order = j;
+#endif
+
             break;
           }
         }
       }
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+      (*vector_record)["best_split_order"].push_back((double)best_split_order);
+#endif
 //       if (best_gain != -1 && config->split_robustness_tolerance > 1e-8 && \
 //               (best_fi != nodes[i].split_fi || best_v != nodes[i].split_v)) {
 //         double worst_gain = -1, ori_gain = -1;
@@ -1212,6 +1225,10 @@ int Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     }
 
     int tolerance = std::max((int)(nodes[i].gains.size() * config->split_robustness_tolerance), 1);
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+    int best_split_order = 0;
+    tolerance = nodes[i].gains.size();
+#endif
     if (tolerance > 1 && best_gain != -1 && !(best_fi == nodes[i].split_fi && best_v == nodes[i].split_v)) {
       std::vector<SplitInfo> sorted_gains(nodes[i].gains);
       std::sort(sorted_gains.begin(), sorted_gains.end(), [](SplitInfo& a, SplitInfo& b){return a.gain > b.gain;});
@@ -1222,10 +1239,17 @@ int Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
           best_fi = info.split_fi;
           best_v = info.split_v;
           nodes[i].gain = best_gain;
+
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+          best_split_order = j;
+#endif
           break;
         }
       }
     }
+#ifdef TIME_EVALUATION && SPLIT_EVALUATION
+    (*vector_record)["best_split_order"].push_back((double)best_split_order);
+#endif
 
 //     if (best_gain != -1 && config->split_robustness_tolerance > 1e-8 && \
 //             (best_fi != nodes[i].split_fi || best_v != nodes[i].split_v)) {
