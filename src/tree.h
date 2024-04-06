@@ -113,7 +113,7 @@ class Tree {
   int unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids, \
                    std::vector<uint> *unids_ptr);
   int tuneTree(std::vector<uint> *ids, std::vector<uint> *fids, \
-                   std::vector<uint> *tune_ids_ptr);
+                   std::vector<uint> *tune_ids_ptr, bool& retrain_following);
 
 #ifdef TIME_EVALUATION
   std::map<std::string, double>* time_records;

@@ -1119,7 +1119,7 @@ int Tree::unlearnTree(std::vector<uint> *ids, std::vector<uint> *fids,
 }
 
 int Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
-                       std::vector<uint> *tune_ids_ptr) {
+                       std::vector<uint> *tune_ids_ptr, bool& retrain_following) {
 #ifdef TIME_EVALUATION
   t4.restart();
 #endif
@@ -1275,6 +1275,10 @@ int Tree::tuneTree(std::vector<uint> *ids, std::vector<uint> *fids,
     if (nodes[i].is_leaf == true) continue;
 
     if (best_fi != nodes[i].split_fi || best_v != nodes[i].split_v) {
+      if (i == 0) {
+        retrain_following = true;
+        return n_nodes;
+      }
       std::vector<uint> retrain_ids;
       std::queue<uint> q;
       q.push(i);

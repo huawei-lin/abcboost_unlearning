@@ -1397,9 +1397,9 @@ void Mart::train() {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    double loss = getLoss();
+    // double loss = getLoss();
     double time_total = t1.get_time_restart();
-    // double loss = 0;
+    double loss = 0;
     if ((m + 1) % config->model_eval_every == 0){
 #ifdef TIME_EVALUATION
       print_detailed_message(m + 1,loss,time_total,F);
@@ -1558,6 +1558,12 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
   t4.restart();
 #endif
 
+  bool retrain_following[K];
+  for (int m = 0; m < K; m++) {
+    retrain_following[m] = false;
+  }
+  int retrain_tree_cnt = 0;
+
   int retrain_node_num = 0;
   for (int m = start_epoch; m < config->model_n_iterations; m++) {
 #ifdef TIME_EVALUATION
@@ -1584,13 +1590,10 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
     // printf("retrain_node_num: %d\n", retrain_node_num);
     // retrain_node_num = 0;
     // printf("retrain_node_num: %d\n", retrain_node_num);
-    if (retrain_node_num > 0) {
-      computeHessianResidual(F_record[m]);
-      recomputeRH = true;
-      retrain_node_num = 0;
-    } else {
-      computeHessianResidual(F_record[m], tune_ids, residuals_record[m], hessians_record[m]);
-    }
+    computeHessianResidual(F_record[m]);
+    recomputeRH = true;
+    retrain_node_num = 0;
+
 #ifdef TIME_EVALUATION
     time_records["tune_model/compute_HR_time"] += t4.get_time_restart();
     int retrain_node_cnt = 0;
@@ -1609,7 +1612,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 #ifdef TIME_EVALUATION
       tree->set_evlation_records(&time_records, &vector_record, &retrain_node_cnt);
       time_records["tune_model/inittree_time"] += t4.get_time_restart();
-      retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids);
+      retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids, retrain_following);
       time_records["tune_model/tunetree_time"] += t4.get_time_restart();
       tree->updateFeatureImportance(m);
       time_records["tune_model/updFeat_time"] += t4.get_time_restart();
@@ -1617,9 +1620,25 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
       // updateF(m, k, tree, F_record);
       time_records["tune_model/updF_time"] += t4.get_time_restart();
 #else
-      retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids);
-      tree->updateFeatureImportance(m);
-      if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      if (retrain_following[k] == false) {
+        retrain_node_num = tree->tuneTree(nullptr, &fids, &tune_ids, retrain_following[k]);
+        tree->updateFeatureImportance(m);
+        if (retrain_node_num > 0) updateF(m, k, tree, F_record);
+      }
+      if (retrain_following[k] == true) {
+        Tree *tree;
+        tree = new Tree(data, config);
+        retrain_tree_cnt += 1;
+        printf("%d, %d: retrain_following true ", m, k);
+        zeroBins();
+        tree->init(&hist, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians[k * data->n_data]), &(residuals[k * data->n_data]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+        tree->buildTree(&ids, &fids);
+        tree->updateFeatureImportance(m);
+        // updateF(m, k, tree, F_record);
+        updateF(k, tree);
+        additive_trees[m][k] = std::unique_ptr<Tree>(tree);
+      }
       // updateF(m, k, tree, F_record);
 #endif
     }
@@ -1628,8 +1647,8 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 //      for (int i = 0; i < data->n_data; ++i) F[1][i] = -F[0][i];
 //    }
 
-    // double loss = getLoss();
-    double loss = 0;
+    double loss = getLoss();
+    // double loss = 0;
     double time_total = t1.get_time_restart();
 
     if ((m + 1) % config->model_eval_every == 0){
@@ -1645,7 +1664,7 @@ void Mart::tune(std::vector<unsigned int>& tune_ids) {
 //       break;
 //     }
   }
-  printf("Training has taken %.5f seconds\n", t2.get_time());
+  printf("Training has taken %.5f seconds (%d/%d)\n", t2.get_time(), retrain_tree_cnt, K*config->model_n_iterations);
 
   if (config->save_model) saveModel(config->model_n_iterations);
   if (config->save_model) saveData();
