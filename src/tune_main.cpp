@@ -97,6 +97,10 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
   */
+  } else if (config->model_name == "regression") {
+    config->model_is_regression = true;
+    model = std::unique_ptr<ABCBoost::GradientBoosting>(
+        new ABCBoost::Regression(data.get(), config.get()));
   } else {
     fprintf(stderr, "Unsupported model name %s\n", config->model_name.c_str());
     exit(1);

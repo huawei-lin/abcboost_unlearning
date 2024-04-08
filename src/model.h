@@ -151,11 +151,14 @@ class Regression : public GradientBoosting {
   void test();
   void train();
   void init();
+  void tune(std::vector<uint>& tune_ids);
 
  private:
 	virtual void print_test_message(int iter,double iter_time,double& low_loss);
 	virtual void print_train_message(int iter,double loss,double iter_time);
   void computeHessianResidual();
+  void computeHessianResidual(std::vector<std::vector<double>>& F);
+  void computeHessianResidual(std::vector<std::vector<double>>& F, std::vector<unsigned int>& tune_ids, std::vector<double>& residuals, std::vector<double>& hessians);
   double getLSLoss();
   double getL1Loss();
   double getLpLoss(const double p);
