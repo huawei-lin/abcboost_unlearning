@@ -892,6 +892,124 @@ void Regression::test() {
   }
 }
 
+void Regression::tune(std::vector<unsigned int>& tune_ids) {
+  // set up buffers for OpenMP
+  std::vector<std::vector<std::vector<unsigned int>>> buffer =
+      GradientBoosting::initBuffer();
+
+  // build one tree if it is binary prediction
+  int K = 1;
+
+  Utils::Timer t1, t2, t3;
+  t1.restart();
+  t2.restart();
+  t3.restart();
+
+  int retrain_node_num = 0;
+  for (int m = start_epoch; m < config->model_n_iterations; m++) {
+    if (config->model_data_sample_rate < 1)
+      ids = sample(data->n_data, config->model_data_sample_rate);
+    if (config->model_feature_sample_rate < 1)
+      fids =
+          sample(data->data_header.n_feats, config->model_feature_sample_rate);
+
+    bool recomputeRH = false;
+    if (retrain_node_num > 0) {
+      computeHessianResidual(F_record[m]);
+      recomputeRH = true;
+      retrain_node_num = 0;
+    } else {
+      computeHessianResidual(F_record[m], tune_ids, residuals_record[m], hessians_record[m]);
+    }
+
+    // zeroBins();
+    Tree *tree = additive_trees[m][0].get();
+    if (recomputeRH == true) {
+      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians[0]), &(residuals[0]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+    } else {
+      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians_record[m][0]), &(residuals_record[m][0]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+    }
+    retrain_node_num += tree->tuneTree(nullptr, &fids, &tune_ids);
+    tree->updateFeatureImportance(m);
+    updateF(m, 0, tree, F_record);
+    if (retrain_node_num > 0) updateF(m, 0, tree, F_record);
+
+    // auto loss = config->regression_huber_loss ? getHuberLoss() : getLpLoss(config->regression_lp_loss);
+    float loss = 0;
+    if ((m + 1) % config->model_eval_every == 0)
+      print_train_message(m + 1,loss,t1.get_time_restart());
+  }
+  printf("Training has taken %.5f seconds\n", t2.get_time());
+
+  if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_importance) getTopFeatures();
+}
+
+void Regression::unlearn(std::vector<unsigned int>& unids) {
+  this->unids = unids;
+
+  // set up buffers for OpenMP
+  std::vector<std::vector<std::vector<unsigned int>>> buffer =
+      GradientBoosting::initBuffer();
+
+  std::vector<unsigned int> ids2ids(ids.size());
+  deleteIds(unids, ids2ids);
+
+  // build one tree if it is binary prediction
+  int K = 1;
+
+  Utils::Timer t1, t2, t3;
+  t1.restart();
+  t2.restart();
+  t3.restart();
+
+  int retrain_node_num = 0;
+  for (int m = start_epoch; m < config->model_n_iterations; m++) {
+    if (config->model_data_sample_rate < 1)
+      ids = sample(data->n_data, config->model_data_sample_rate);
+    if (config->model_feature_sample_rate < 1)
+      fids =
+          sample(data->data_header.n_feats, config->model_feature_sample_rate);
+
+    bool recomputeRH = false;
+    if (retrain_node_num > 0) {
+      computeHessianResidual(F_record[m]);
+      recomputeRH = true;
+      retrain_node_num = 0;
+    }
+
+    // zeroBins();
+    Tree *tree = additive_trees[m][0].get();
+    if (recomputeRH == true) {
+      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians[0]), &(residuals[0]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+    } else {
+      tree->init(nullptr, &buffer[0], &buffer[1], &feature_importance,
+                 &(hessians_record[m][0]), &(residuals_record[m][0]),ids_tmp.data(),H_tmp.data(),R_tmp.data());
+    }
+    retrain_node_num += tree->unlearnTree(nullptr, &fids, &unids);
+    tree->updateFeatureImportance(m);
+    // updateF(m, 0, tree, F_record);
+    if (retrain_node_num > 0) updateF(m, 0, tree, F_record);
+
+    // auto loss = config->regression_huber_loss ? getHuberLoss() : getLpLoss(config->regression_lp_loss);
+    float loss = 0;
+    if ((m + 1) % config->model_eval_every == 0)
+      print_train_message(m + 1,loss,t1.get_time_restart());
+//     if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+//     if(loss < config->regression_stop_factor){
+//         config->model_n_iterations = m + 1;
+//         break;
+//     }
+  }
+  printf("Training has taken %.5f seconds\n", t2.get_time());
+
+  if (config->save_model) saveModel(config->model_n_iterations);
+  if (config->save_importance) getTopFeatures();
+}
+
 /**
  * Method to implement training process for MART algorithm as described
  * by Friedman et Al. (2001). Descriptions for used sub-routines are available
@@ -917,7 +1035,10 @@ void Regression::train() {
       fids =
           sample(data->data_header.n_feats, config->model_feature_sample_rate);
 
+    F_record.emplace_back(F);
     computeHessianResidual();
+    hessians_record.emplace_back(hessians);
+    residuals_record.emplace_back(residuals);
 
     zeroBins();
 
@@ -932,12 +1053,13 @@ void Regression::train() {
     auto loss = config->regression_huber_loss ? getHuberLoss() : getLpLoss(config->regression_lp_loss);
     if ((m + 1) % config->model_eval_every == 0)
       print_train_message(m + 1,loss,t1.get_time_restart());
-    if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
-    if(loss < config->regression_stop_factor){
-        config->model_n_iterations = m + 1;
-        break;
-    }
+    // if (config->save_model && (m + 1) % config->model_save_every == 0) saveModel(m + 1);
+    // if(loss < config->regression_stop_factor){
+    //     config->model_n_iterations = m + 1;
+    //     break;
+    // }
   }
+  F_record.emplace_back(F);
   printf("Training has taken %.5f seconds\n", t2.get_time());
 
   if (config->save_model) saveModel(config->model_n_iterations);
@@ -986,6 +1108,92 @@ void Regression::computeHessianResidual() {
     }
   }
 }
+
+void Regression::computeHessianResidual(std::vector<std::vector<double>>& F) {
+  if (config->regression_l1_loss){
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < data->n_data; i++) {
+      residuals[i] = (F[0][i] - data->Y[i]) > 0 ? -1.0 : 1.0;
+      hessians[i] = 1;
+    }
+  }else if (config->regression_huber_loss){
+    const double& p = config->regression_lp_loss;
+    const double delta = config->huber_delta;
+  const double delta_p_1 = pow(delta,p - 1);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < data->n_data; i++) {
+      if(fabs(F[0][i] - data->Y[i]) <= delta){
+        residuals[i] = -p * pow(fabs(F[0][i] - data->Y[i]),p - 1);
+        hessians[i] = 1;
+      }else{
+        residuals[i] = ((F[0][i] - data->Y[i]) > 0 ? -1.0 : 1.0) * delta_p_1;
+        hessians[i] = 1;
+      }
+    }
+  }else if (config->regression_lp_loss != 2.0){
+    const double& p = config->regression_lp_loss;
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < data->n_data; i++) {
+      int sign = (F[0][i] - data->Y[i]) > 0 ? -1 : 1;
+      const double diff = fabs(F[0][i] - data->Y[i]);
+      residuals[i] = p * pow(diff,p - 1) * sign;
+      hessians[i] = (p <= 2) ? p : p * (p - 1) * pow(diff,p - 2);
+    }
+  }else{
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < data->n_data; i++) {
+      residuals[i] = -2.0 * (F[0][i] - data->Y[i]);
+      hessians[i] = 2;
+    }
+  }
+
+}
+
+
+void Regression::computeHessianResidual(std::vector<std::vector<double>>& F, std::vector<unsigned int>& tune_ids, std::vector<double>& residuals, std::vector<double>& hessians) {
+  if (config->regression_l1_loss){
+    #pragma omp parallel for schedule(static)
+    for (unsigned int& i : tune_ids) {
+    // for (int i = 0; i < data->n_data; i++) {
+      residuals[i] = (F[0][i] - data->Y[i]) > 0 ? -1.0 : 1.0;
+      hessians[i] = 1;
+    }
+  }else if (config->regression_huber_loss){
+    const double& p = config->regression_lp_loss;
+    const double delta = config->huber_delta;
+  const double delta_p_1 = pow(delta,p - 1);
+    #pragma omp parallel for schedule(static)
+    for (unsigned int& i : tune_ids) {
+    // for (int i = 0; i < data->n_data; i++) {
+      if(fabs(F[0][i] - data->Y[i]) <= delta){
+        residuals[i] = -p * pow(fabs(F[0][i] - data->Y[i]),p - 1);
+        hessians[i] = 1;
+      }else{
+        residuals[i] = ((F[0][i] - data->Y[i]) > 0 ? -1.0 : 1.0) * delta_p_1;
+        hessians[i] = 1;
+      }
+    }
+  }else if (config->regression_lp_loss != 2.0){
+    const double& p = config->regression_lp_loss;
+    #pragma omp parallel for schedule(static)
+    for (unsigned int& i : tune_ids) {
+    // for (int i = 0; i < data->n_data; i++) {
+      int sign = (F[0][i] - data->Y[i]) > 0 ? -1 : 1;
+      const double diff = fabs(F[0][i] - data->Y[i]);
+      residuals[i] = p * pow(diff,p - 1) * sign;
+      hessians[i] = (p <= 2) ? p : p * (p - 1) * pow(diff,p - 2);
+    }
+  }else{
+    #pragma omp parallel for schedule(static)
+    for (unsigned int& i : tune_ids) {
+    // for (int i = 0; i < data->n_data; i++) {
+      residuals[i] = -2.0 * (F[0][i] - data->Y[i]);
+      hessians[i] = 2;
+    }
+  }
+
+}
+
 
 /**
  * Helper method to compute least squares loss on current probabilities.
@@ -1138,7 +1346,7 @@ void BinaryMart::updateF(Tree *tree) {
 #pragma omp parallel for
     for (int i = start; i < end; ++i) F[ids[i]] += update;
   }
-  tree->freeMemory();
+  // tree->freeMemory();
 }
 void BinaryMart::computeHessianResidual() {
 #pragma omp parallel for schedule(static)

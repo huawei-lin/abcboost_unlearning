@@ -78,10 +78,6 @@ int main(int argc, char* argv[]) {
       model = std::unique_ptr<ABCBoost::GradientBoosting>(
           new ABCBoost::ABCMart(data.get(), config.get()));
     }
-  } else if (config->model_name == "regression") {
-    config->model_is_regression = true;
-    model = std::unique_ptr<ABCBoost::GradientBoosting>(
-        new ABCBoost::Regression(data.get(), config.get()));
   } else if (config->model_name == "lambdamart" || config->model_name == "lambdarank") {
     config->model_is_regression = 1;
         config->model_use_logit = true;
@@ -92,11 +88,11 @@ int main(int argc, char* argv[]) {
         config->model_use_logit = true;
     model = std::unique_ptr<ABCBoost::GradientBoosting>(
                 new ABCBoost::GBRank(data.get(), config.get()));
-  } else {
-    fprintf(stderr, "Unsupported model name %s\n", config->model_name.c_str());
-    exit(1);
-  }
   */
+  } else if (config->model_name == "regression") {
+    config->model_is_regression = true;
+    model = std::unique_ptr<ABCBoost::GradientBoosting>(
+        new ABCBoost::Regression(data.get(), config.get()));
   } else {
     fprintf(stderr, "Unsupported model name %s\n", config->model_name.c_str());
     exit(1);

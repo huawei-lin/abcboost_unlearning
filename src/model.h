@@ -150,12 +150,16 @@ class Regression : public GradientBoosting {
   Regression(Data* data, Config* config);
   void test();
   void train();
+  void unlearn(std::vector<uint>& unids);
+  void tune(std::vector<uint>& tune_ids);
   void init();
 
  private:
 	virtual void print_test_message(int iter,double iter_time,double& low_loss);
 	virtual void print_train_message(int iter,double loss,double iter_time);
   void computeHessianResidual();
+  void computeHessianResidual(std::vector<std::vector<double>>& F);
+  void computeHessianResidual(std::vector<std::vector<double>>& F, std::vector<unsigned int>& tune_ids, std::vector<double>& residuals, std::vector<double>& hessians);
   double getLSLoss();
   double getL1Loss();
   double getLpLoss(const double p);
@@ -189,7 +193,7 @@ class Mart : public GradientBoosting {
   Mart(Data* data, Config* config);
   void test();
   void train();
-  void unlearn(std::vector<uint>& unidxs);
+  void unlearn(std::vector<uint>& unids);
   void tune(std::vector<uint>& tune_ids);
   void test_rank();
   friend class MOCMart;
